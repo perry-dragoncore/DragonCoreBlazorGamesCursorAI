@@ -1,0 +1,112 @@
+﻿@page "/mastermind"
+@using Microsoft.Fast.Components.FluentUI
+@inject IJSRuntime JSRuntime
+
+<h1>Mastermind</h1>
+
+
+<FluentCard>
+    <div class="mastermind-board">
+        @for (int row = 0; row < numberOfRows; row++)
+        {
+            <FluentCard class="mastermind-row">
+                @for (int col = 0; col < numberOfColumns; col++)
+                {
+                    <FluentButton class="mastermind-cell" @onclick="() => SelectColor(row, col)"></FluentButton>
+                }
+            </FluentCard>
+        }
+    </div>
+    <FluentButton class="submit-guess" @onclick="SubmitGuess">Submit Guess</FluentButton>
+</FluentCard>
+
+@code {
+    private MastermindGame game;
+    private int numberOfRows = 10;
+    private int numberOfColumns = 4;
+    private int[][] guesses;
+    private bool[] submittedRows;
+
+    protected override void OnInitialized()
+    {
+        game = new MastermindGame();
+        guesses = new int[numberOfRows][];
+        submittedRows = new bool[numberOfRows];
+
+        for (int i = 0; i < numberOfRows; i++)
+        {
+            guesses[i] = new int[numberOfColumns];
+        }
+    }
+
+    private void SelectColor(int row, int col)
+    {
+        if (submittedRows[row]) return;
+
+        guesses[row][col] = (guesses[row][col] + 1) % (MastermindGame.ColorCount + 1);
+        StateHasChanged();
+    }
+
+    private async Task SubmitGuess()
+    {
+        int currentRow = Array.IndexOf(submittedRows, false);
+        if (currentRow < 0) return;
+
+        submittedRows[currentRow] = true;
+        var (correctPosition, correctColor) = game.CheckGuess(guesses[currentRow]);
+
+        if (correctPosition == numberOfColumns)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Congratulations! You've won!");
+        }
+        else if (currentRow == numberOfRows - 1)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Game over! Better luck next time.");
+        }
+    }
+}
+
+
+@*<style>
+        .mastermind-board {
+        }
+
+        .mastermind-row {
+        }
+
+        .mastermind-cell {
+        }
+    </style>
+
+    <div class="mastermind-board">
+        @for (int row = 0; row < numberOfRows; row++)
+        {
+            <div class="mastermind-row">
+                @for (int col = 0; col < numberOfColumns; col++)
+                {
+                    <div class="mastermind-cell"></div>
+                }
+            </div>
+        }
+    </div>
+
+
+    @code {
+        @inject IJSRuntime JSRuntime;
+
+        private int numberOfRows = 10;
+        private int numberOfColumns = 4;
+        private MastermindGame game;
+
+        protected override void OnInitialized()
+        {
+            game = new MastermindGame();
+        }
+
+
+        private async Task CallJavaScriptFunction()
+        {
+            await JSRuntime.InvokeVoidAsync("someJavaScriptFunction");
+        }
+
+    }*@

@@ -1,0 +1,242 @@
+﻿@page "/connect4"
+
+<h3>Connect 4</h3>
+
+<style>
+    /* Board styles */
+    .board {
+        display: flex;
+        flex-wrap: wrap;
+        width: 700px;
+        height: 600px;
+        background-color: blue;
+    }
+
+    /* Cell styles */
+    .cell {
+        box-sizing: border-box;
+        width: 100px;
+        height: 100px;
+        border: 1px solid black;
+        background-color: white;
+    }
+
+        .cell img {
+            max-width: 100px;
+            max-height: 100px;
+        }
+    /* Piece styles */
+    .piece {
+        box-sizing: border-box;
+        width: calc(100% / 7 * 0.8);
+        height: calc(100% / 6 * 0.8);
+        border-radius: 50%;
+        margin: auto;
+    }
+
+        .piece.player1 {
+            background-color: red;
+        }
+
+        .piece.player2 {
+            background-color: yellow;
+        }
+</style>
+
+<div class="board">
+    @for (int row = 0; row < 6; row++)
+    {
+        @foreach (var col in Enumerable.Range(0, 7))
+        {
+            <div class="cell" @onclick="() => OnClick(col)">
+                @if (!string.IsNullOrEmpty(images[col, row]))
+                {
+                    <img src="@images[col, row]" />
+                }
+            </div>
+        }
+    }
+</div>
+
+<div>Player 1 <img src="/images/X.png" style="max-height: 32px;" />: @playerCounts[0] pieces</div>
+<div>Player 2 <img src="/images/O.png" style="max-height: 32px;" />: @playerCounts[1] pieces</div>
+@if (gameover)
+{
+    <h1>Game Over</h1>
+}
+@if (winner > 0)
+{
+    <h2>Player @winner <img src="/images/@(winner==1? "X" : "O").png" style="max-height: 64px;" /> won</h2>
+}
+
+@code {
+    private int[,] board = new int[7, 6]; // Example game board
+    private string[,] images = new string[7, 6]; // Array of image URLs
+    private int currentPlayer = 1;
+    private int[] playerCounts = { 0, 0 }; // Array to hold the number of pieces each player has placed
+    private bool gameover = false;
+    private int winner = 0;
+
+    protected override void OnInitialized()
+    {
+        for (int x = 0; x < 7; x++)
+        {
+            for (int y = 0; y < 6; y++)
+            {
+                board[x, y] = 0;
+            }
+        }
+    }
+
+    private void OnClick(int column)
+    {
+        if (gameover) return;
+
+        // Find the lowest empty cell in the column
+        int row = -1;
+        for (int i = 0; i < 6; i++)
+        {
+            if (board[column, i] == 0)
+            {
+                row = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (row != -1)
+        {
+            // Drop a piece in the lowest empty cell
+            board[column, row] = currentPlayer;
+
+            // Set the image URL for the cell
+            images[column, row] = (currentPlayer == 1) ? "/images/X.png" : "/images/O.png";
+
+            // Increment the player's piece count
+            playerCounts[currentPlayer - 1]++;
+
+            // Check for a winning scenario
+            if (CheckForWin(column, row))
+            {
+                gameover = true;
+                winner = currentPlayer;
+            }
+            else if (CheckForTie())
+            {
+                gameover = true;
+            }
+            else
+            {
+                // Switch to the next player
+                currentPlayer = (currentPlayer == 1) ? 2 : 1;
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    private bool CheckForWin(int column, int row)
+    {
+        int count = 0;
+
+        // Check for a horizontal win
+        for (int i = 0; i < 7; i++)
+        {
+            if (board[i, row] == currentPlayer)
+            {
+                count++;
+                if (count == 4)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                count = 0;
+            }
+        }
+
+        // Check for a vertical win
+        count = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            if (board[column, i] == currentPlayer)
+            {
+                count++;
+                if (count == 4)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                count = 0;
+            }
+        }
+
+        // Check diagonal 1
+        count = 0;
+        int i1 = Math.Max(0, column - 3);
+        int j1 = Math.Max(0, row - 3);
+        while (i1 <= Math.Min(6, column + 3) && j1 <= Math.Min(5, row + 3))
+        {
+            if (board[i1, j1] == currentPlayer)
+            {
+                count++;
+                if (count == 4)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                count = 0;
+            }
+            i1++;
+            j1++;
+        }
+
+        // Check diagonal 2
+        count = 0;
+        int i2 = Math.Max(0, column - 3);
+        int j2 = Math.Min(5, row + 3);
+        while (i2 <= Math.Min(6, column + 3) && j2 >= Math.Max(0, row - 3))
+        {
+            if (board[i2, j2] == currentPlayer)
+            {
+                count++;
+                if (count == 4)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                count = 0;
+            }
+            i2++;
+            j2--;
+        }
+
+
+        // No winning scenario found
+        return false;
+    }
+
+    private bool CheckForTie()
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            if (board[i, 5] == 0)
+            {
+                // There is at least one cell that is empty, so the game is not tied
+                return false;
+            }
+        }
+        // All cells are full, so the game is tied
+        return true;
+    }
+
+}

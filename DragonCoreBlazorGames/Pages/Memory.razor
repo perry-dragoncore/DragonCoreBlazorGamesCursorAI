@@ -1,0 +1,255 @@
+﻿@page "/memory"
+
+<h1>Memory Matching Game</h1>
+
+<style>
+    .board {
+        display: flex;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+        max-width: 500px;
+    }
+
+    .square {
+        width: 100px;
+        height: 100px;
+        background-color: #ddd;
+        margin: 5px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        border: 1px solid #bbb;
+    }
+
+        .square img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .square.removed {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+    .stats {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .matches {
+        font-size: 24px;
+        font-weight: bold;
+    }
+
+    .message {
+        font-size: 24px;
+        font-weight: bold;
+        color: green;
+        margin-bottom: 20px;
+    }
+
+    button {
+        font-size: 18px;
+        font-weight: bold;
+        padding: 10px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+
+        button:hover {
+            background-color: #3e8e41;
+        }
+
+        button:active {
+            background-color: #3e8e41;
+            box-shadow: 0 5px #666;
+            transform: translateY(4px);
+        }
+</style>
+
+
+<div class="board">
+    @foreach (var square in squares)
+    {
+        <div class="@($"square {square.State}")" @onclick="() => OnSquareClick(square)">
+            @if (square.State == SquareState.Hidden)
+            {
+                <img src="@backImage" alt="Back of Card" />
+            }
+            else
+            {
+                <img src="@square.ImageUrl" alt="Card" />
+            }
+        </div>
+    }
+</div>
+
+<div class="stats">
+    <div class="matches">Matches: @matches</div>
+    <div class="timer">Time: @timeRemaining s</div>
+</div>
+
+@if (gameOver)
+{
+    <div class="message">Congratulations! You won in @elapsedTime seconds.</div>
+    <button @onclick="ResetGame">Play Again</button>
+}
+
+@code {
+    enum SquareState
+    {
+        Hidden,
+        Visible,
+        Removed
+    }
+
+    class Square
+    {
+        public string ImageUrl { get; set; }
+        public SquareState State { get; set; }
+    }
+
+    const int BoardSize = 16;
+    const int MatchesNeeded = 8;
+    const int GameDurationSeconds = 60;
+
+    readonly string backImage = "https://picsum.photos/200/200?grayscale";
+    readonly string[] images =
+    {
+        "https://picsum.photos/id/1019/200/200",
+        "https://picsum.photos/id/1020/200/200",
+        "https://picsum.photos/id/1021/200/200",
+        "https://picsum.photos/id/1022/200/200",
+        "https://picsum.photos/id/1023/200/200",
+        "https://picsum.photos/id/1024/200/200",
+        "https://picsum.photos/id/1025/200/200",
+        "https://picsum.photos/id/1026/200/200",
+    };
+
+    List<Square> squares = new List<Square>();
+    int matches = 0;
+    int timeRemaining = GameDurationSeconds;
+    bool gameOver = false;
+    DateTime startTime;
+    TimeSpan elapsedTime;
+
+    protected override void OnInitialized()
+    {
+        InitializeBoard();
+        StartTimer();
+    }
+
+    void InitializeBoard()
+    {
+        var rand = new Random();
+        var selectedImages = new HashSet<string>();
+        while (selectedImages.Count < MatchesNeeded)
+        {
+            selectedImages.Add(images[rand.Next(images.Length)]);
+        }
+        var imageUrls = selectedImages.Concat(selectedImages).ToArray();
+        Utils.Shuffle(imageUrls);
+
+        for (int i = 0; i < BoardSize; i++)
+        {
+            squares.Add(new Square
+            {
+                ImageUrl = imageUrls[i],
+                State = SquareState.Hidden
+            });
+        }
+    }
+
+    async Task OnSquareClick(Square square)
+    {
+        if (square.State == SquareState.Hidden)
+        {
+            square.State = SquareState.Visible;
+            await Task.Delay(500); // Wait for animation to finish
+            if (squares.Count(s => s.State == SquareState.Visible) == 2)
+            {
+                var visibleSquares = squares.Where(s => s.State == SquareState.Visible).ToArray();
+                if (visibleSquares[0].ImageUrl == visibleSquares[1].ImageUrl)
+                {
+                    visibleSquares[0].State = SquareState.Removed;
+                    visibleSquares[1].State = SquareState.Removed;
+                    matches++;
+                    if (matches == MatchesNeeded)
+                    {
+                        EndGame();
+                    }
+                }
+                else
+                {
+                    visibleSquares[0].State = SquareState.Hidden;
+                    visibleSquares[1].State = SquareState.Hidden;
+                }
+            }
+        }
+    }
+    void StartTimer()
+    {
+        startTime = DateTime.UtcNow;
+        _ = UpdateTimer();
+    }
+
+    async Task UpdateTimer()
+    {
+        while (timeRemaining > 0 && !gameOver)
+        {
+            await Task.Delay(1000);
+            timeRemaining = GameDurationSeconds - (int)(DateTime.UtcNow - startTime).TotalSeconds;
+            StateHasChanged();
+        }
+        if (!gameOver)
+        {
+            EndGame();
+        }
+    }
+
+    void EndGame()
+    {
+        gameOver = true;
+        elapsedTime = DateTime.UtcNow - startTime;
+    }
+
+    void ResetGame()
+    {
+        squares.Clear();
+        matches = 0;
+        timeRemaining = GameDurationSeconds;
+        gameOver = false;
+        InitializeBoard();
+        StartTimer();
+    }
+}
+
+@*<div class="board">
+        @foreach (var square in squares)
+        {
+            <div class="square @(square.IsRemoved ? "removed" : "")" @onclick="() => HandleSquareClick(square.Id)">
+                @if (square.IsFlipped || square.IsRemoved)
+                {
+                    <img src="@square.Image" />
+                }
+            </div>
+        }
+    </div>
+
+    <div class="stats">
+        <div class="matches">Matches: @matches / 8</div>
+        <div class="attempts">Attempts: @attempts</div>
+        <div class="time">Time: @timeElapsed s</div>
+        @if (matches == 8)
+        {
+            <div class="message">Congratulations! You completed the game in @timeElapsed seconds.</div>
+            <button @onclick="Reset">New Game</button>
+        }
+    </div>*@
+

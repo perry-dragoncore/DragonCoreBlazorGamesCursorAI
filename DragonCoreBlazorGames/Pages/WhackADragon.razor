@@ -1,0 +1,194 @@
+﻿@page "/whackadragon"
+@inject IJSRuntime JsRuntime
+
+<h3>WhackADragon</h3>
+<style>
+    .game-board {
+        cursor: url('/images/custom-cursor.png'), auto;
+        position: relative;
+        width: 600px;
+        height: 600px;
+        background-color: #FFF;
+        border: 1px solid #000;
+    }
+
+    .target {
+        cursor: url('/images/custom-cursor.png'), auto;
+        position: absolute;
+        width: 100px;
+        height: 100px;
+        border: none;
+        transition: all 0.2s ease-in-out;
+    }
+
+        .target.shrink {
+            transition: all 1.0s;
+            transform: scale(0);
+        }
+
+    .score {
+        margin-top: 10px;
+    }
+</style>
+
+<div class="game-board" @onclick="@(() => WhackBoard())">
+    <div>
+        @foreach (var target in Targets)
+        {
+            <img class="target @target.ClassName" src="@target.ImageUrl" @onclick="@(() => WhackTarget(target))" style="top:@string.Format("{0}px",target.Top);left:@string.Format("{0}px",target.Left);display:@(target.IsVisible ? "block" : "none")" />
+        }
+    </div>
+</div>
+<div class="score">
+    <p>Time Remaining: @TimeRemaining seconds</p>
+    <p>Score: @Score</p>
+</div>
+<audio src="audio/blip1.mp3" id="miss-sound"></audio>
+<audio src="audio/explode.wav" id="hit-sound"></audio>
+
+@code {
+    private IJSRuntime _jsRuntime;
+    private List<Target> Targets { get; set; } = new List<Target>();
+    private int Score { get; set; }
+    private int TimeRemaining { get; set; } = 30;
+
+    protected override void OnInitialized()
+    {
+        Targets = GenerateTargets();
+
+        // Start the timer to show and hide the targets
+        var timer = new Timer(state => ShowRandomTarget(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(new Random().Next(1, 4)));
+
+        // Start the timer for the countdown
+        var countdownTimer = new Timer(state => UpdateTimeRemaining(), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+
+        _jsRuntime = JsRuntime;
+    }
+
+    private List<Target> GenerateTargets()
+    {
+        List<Target> targets = new List<Target>();
+
+        // Generate targets with image URLs and random positions
+        Target t = new Target();
+        t.ImageUrl = "/images/X.png";
+        t.IsVisible = false;
+        t.RandomizeLocation();
+        targets.Add(t);
+
+        Target t2 = new Target();
+        t2.ImageUrl = "/images/O.png";
+        t2.IsVisible = false;
+        t2.RandomizeLocation();
+        targets.Add(t2);
+
+        return targets;
+    }
+
+    private void ShowRandomTarget()
+    {
+        if (TimeRemaining <= 0) return;
+
+        // Find a random target that is currently not visible
+        var random = new Random();
+        var target = Targets[random.Next(Targets.Count)];
+        while (target.IsVisible)
+        {
+            target = Targets[random.Next(Targets.Count)];
+        }
+
+        // Show the target and start the timer to hide it
+        target.IsVisible = true;
+        StateHasChanged();
+        var timer = new Timer(state => HideTarget(target), null, TimeSpan.FromSeconds(0.6), Timeout.InfiniteTimeSpan);
+    }
+
+    private void HideTarget(Target target)
+    {
+        // Hide the target and update the state
+        target.IsVisible = false;
+        target.RandomizeLocation();
+        StateHasChanged();
+    }
+
+    private async void WhackBoard()
+    {
+        // Play the miss sound
+        await _jsRuntime.InvokeVoidAsync(
+          "playAudio",
+          "miss-sound"
+        );
+    }
+
+    private async void WhackTarget(Target target)
+    {
+        if (target.IsVisible)
+        {
+            // Play the miss sound
+            await _jsRuntime.InvokeVoidAsync(
+              "playAudio",
+              "hit-sound"
+            );
+
+            //target.IsVisible = false;
+            Score++;
+
+            // Set the target size to 0 to start the shrinking animation
+            target.Size = 0;
+            StateHasChanged();
+
+            // Wait for the next render cycle to apply the "shrink" class and start the transition
+            await Task.Delay(1);
+            target.ClassName = "shrink";
+            StateHasChanged();
+
+            // Wait for the transition to complete before resetting the size and class name
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            target.Size = 1;
+            target.ClassName = "";
+            target.IsVisible = false;
+            StateHasChanged();
+        }
+    }
+
+    public class Target
+    {
+        public string ImageUrl { get; set; }
+        public int Top { get; set; }
+        public int Left { get; set; }
+        public bool IsVisible { get; set; }
+        public double Size { get; set; } = 1.0;
+        public string ClassName { get; set; }
+
+        public void RandomizeLocation()
+        {
+            Top = new Random().Next(0, 500);
+            Left = new Random().Next(0, 500);
+            Console.WriteLine(Top);
+            Console.WriteLine(Left);
+        }
+    }
+
+
+    private void UpdateTimeRemaining()
+    {
+        if (TimeRemaining > 0)
+        {
+            TimeRemaining--;
+        }
+        else
+        {
+            EndGame();
+        }
+        StateHasChanged();
+    }
+
+    private void EndGame()
+    {
+        // Do any final calculations or actions, such as saving the score to a database
+        // ...
+
+        // Navigate to the game over page or display a message
+        // ...
+    }
+}

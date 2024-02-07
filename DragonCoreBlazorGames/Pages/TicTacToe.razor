@@ -1,0 +1,117 @@
+﻿@page "/tictactoe"
+
+<style>
+    .board {
+        display: grid;
+        grid-template-columns: repeat(3, 100px);
+        grid-template-rows: repeat(3, 100px);
+        grid-gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .cell {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: #eee;
+        border: 1px solid #ccc;
+        cursor: pointer;
+    }
+
+        .cell img {
+            max-width: 100px;
+            max-height: 100px;
+        }
+</style>
+
+<h1>Tic Tac Toe</h1>
+
+<p>It's @CurrentPlayer's turn.</p>
+
+<div class="board">
+    @for (int i = 0; i < 9; i++)
+    {
+        int index = i; // create a local copy of i for each iteration
+        <div class="cell" @onclick="() => OnCellClicked(index)">
+            @if (Board[index] != null)
+            {
+                <img src="@Board[index]" />
+            }
+        </div>
+    }
+</div>
+
+@if (Winner != null)
+{
+    <p>@Winner wins!</p>
+}
+
+<button @onclick="Reset">Reset</button>
+
+
+
+
+@code {
+    private string[] Players = new[] { "Player 1", "Player 2" };
+    private string[] Symbols = new[] { "/images/X.png", "/images/O.png" };
+    private int CurrentPlayer = 0;
+    private string[] Board = new string[9];
+    private string Winner = null;
+
+    private void OnCellClicked(int index)
+    {
+        if (Board[index] == null && Winner == null)
+        {
+            Board[index] = Symbols[CurrentPlayer];
+            if (CheckWinner(Symbols[CurrentPlayer]))
+            {
+                Winner = Players[CurrentPlayer];
+            }
+            else
+            {
+                CurrentPlayer = (CurrentPlayer + 1) % 2;
+            }
+        }
+    }
+
+    private bool CheckWinner(string symbol)
+    {
+        // Check rows
+        for (int i = 0; i < 9; i += 3)
+        {
+            if (Board[i] == symbol && Board[i + 1] == symbol && Board[i + 2] == symbol)
+            {
+                return true;
+            }
+        }
+
+        // Check columns
+        for (int i = 0; i < 3; i++)
+        {
+            if (Board[i] == symbol && Board[i + 3] == symbol && Board[i + 6] == symbol)
+            {
+                return true;
+            }
+        }
+
+        // Check diagonals
+        if (Board[0] == symbol && Board[4] == symbol && Board[8] == symbol)
+        {
+            return true;
+        }
+
+        if (Board[2] == symbol && Board[4] == symbol && Board[6] == symbol)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void Reset()
+    {
+        CurrentPlayer = 0;
+        Board = new string[9];
+        Winner = null;
+    }
+}

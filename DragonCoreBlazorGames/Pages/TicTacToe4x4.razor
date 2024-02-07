@@ -1,0 +1,298 @@
+﻿@page "/tictactoe4x4"
+
+<h1>Tic Tac Toe 4x4</h1>
+
+<p>It's @CurrentPlayer's turn.</p>
+
+<div class="board">
+    @for (int i = 0; i < 16; i++)
+    {
+        int index = i; // create a local copy of i for each iteration
+        <div class="cell" @onclick="() => OnCellClicked(index)">
+            @if (Board[index] != null)
+            {
+                <img src="@Board[index]" />
+            }
+        </div>
+    }
+</div>
+
+@if (Winner != null)
+{
+    <p>@Winner wins!</p>
+}
+
+<button @onclick="Reset">Reset</button>
+
+@*@if (Game.IsGameOver)
+{
+    @if (Game.Winner == TileState.Empty)
+    {
+        <p>It's a tie!</p>
+    }
+    else
+    {
+        <p>@Game.Winner wins!</p>
+    }
+}
+else
+{
+    <p>Current player: @Game.CurrentPlayer</p>
+}*@
+
+@*<div class="board">
+    @for (int i = 0; i < 4; i++)
+    {
+        <div class="row">
+            @for (int j = 0; j < 4; j++)
+            {
+                <button class="tile @(GetTileClass(i, j))" disabled="@(!IsMyTurn || Game.IsGameOver)" @onclick="(() => OnTileClicked(i, j))">
+                    @if (Game.Board[i, j] == TileState.X)
+                    {
+                        <img src="x.png" alt="X" />
+                    }
+                    else if (Game.Board[i, j] == TileState.O)
+                    {
+                        <img src="o.png" alt="O" />
+                    }
+                </button>
+            }
+        </div>
+    }
+</div>*@
+
+<style>
+    .board {
+        display: grid;
+        grid-template-columns: repeat(4, 100px);
+        grid-template-rows: repeat(4, 100px);
+        grid-gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .cell {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: #eee;
+        border: 1px solid #ccc;
+        cursor: pointer;
+    }
+
+        .cell img {
+            max-width: 100px;
+            max-height: 100px;
+        }
+</style>
+
+
+@code {
+    private string[] Players = new[] { "Player 1", "Player 2" };
+    private string[] Symbols = new[] { "/images/X.png", "/images/O.png" };
+    private int CurrentPlayer = 0;
+    private string[] Board = new string[18];
+    private string Winner = null;
+
+    private void OnCellClicked(int index)
+    {
+        if (Board[index] == null && Winner == null)
+        {
+            Board[index] = Symbols[CurrentPlayer];
+            if (CheckWinner(Symbols[CurrentPlayer]))
+            {
+                Winner = Players[CurrentPlayer];
+            }
+            else
+            {
+                CurrentPlayer = (CurrentPlayer + 1) % 2;
+            }
+        }
+    }
+    private bool CheckWinner(string symbol)
+    {
+        // Check rows
+        for (int i = 0; i < 16; i += 4)
+        {
+            if (Board[i] == symbol && Board[i + 1] == symbol && Board[i + 2] == symbol && Board[i + 3] == symbol)
+            {
+                return true;
+            }
+        }
+
+        // Check columns
+        for (int i = 0; i < 4; i++)
+        {
+            if (Board[i] == symbol && Board[i + 4] == symbol && Board[i + 8] == symbol && Board[i + 12] == symbol)
+            {
+                return true;
+            }
+        }
+
+        // Check diagonals
+        if (Board[0] == symbol && Board[5] == symbol && Board[10] == symbol && Board[15] == symbol)
+        {
+            return true;
+        }
+
+        if (Board[3] == symbol && Board[6] == symbol && Board[9] == symbol && Board[12] == symbol)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void Reset()
+    {
+        CurrentPlayer = 0;
+        Board = new string[16];
+        Winner = null;
+    }
+
+    //private string gameId;
+    //private bool IsMyTurn => Game.CurrentPlayer == MyPlayer;
+
+    //private void OnTileClicked(int row, int col)
+    //{
+    //    if (!IsMyTurn)
+    //    {
+    //        return;
+    //    }
+
+    //    if (!Game.Play(row, col))
+    //    {
+    //        return;
+    //    }
+    //}
+
+    //private void ReceiveMove(string playerId, int row, int col)
+    //{
+    //    if (playerId == MyPlayer)
+    //    {
+    //        return;
+    //    }
+
+    //    Game.Play(row, col);
+    //}
+
+    //private void ReceiveRestart()
+    //{
+    //    Game = new Game();
+    //}
+
+    //private string GetTileClass(int row, int col)
+    //{
+    //    if (Game.Board[row, col] == TileState.X)
+    //    {
+    //        return "x";
+    //    }
+    //    else if (Game.Board[row, col] == TileState.O)
+    //    {
+    //        return "o";
+    //    }
+    //    else
+    //    {
+    //        return "";
+    //    }
+    //}
+
+    public enum TileState
+    {
+        Empty,
+        X,
+        O
+    }
+
+    public class Game
+    {
+        public TileState[,] Board { get; private set; }
+        public TileState CurrentPlayer { get; private set; }
+        public bool IsGameOver { get; private set; }
+        public TileState Winner { get; private set; }
+
+        public Game()
+        {
+            Board = new TileState[4, 4];
+            CurrentPlayer = TileState.X;
+            IsGameOver = false;
+            Winner = TileState.Empty;
+        }
+
+        public bool Play(int row, int col)
+        {
+            if (IsGameOver || Board[row, col] != TileState.Empty)
+            {
+                return false;
+            }
+
+            Board[row, col] = CurrentPlayer;
+
+            if (CheckForWinner())
+            {
+                IsGameOver = true;
+                Winner = CurrentPlayer;
+            }
+            else if (CheckForTie())
+            {
+                IsGameOver = true;
+            }
+            else
+            {
+                CurrentPlayer = CurrentPlayer == TileState.X ? TileState.O : TileState.X;
+            }
+
+            return true;
+        }
+
+        private bool CheckForWinner()
+        {
+            // Check rows
+            for (int i = 0; i < 4; i++)
+            {
+                if (Board[i, 0] != TileState.Empty && Board[i, 0] == Board[i, 1] && Board[i, 1] == Board[i, 2] && Board[i, 2] == Board[i, 3])
+                {
+                    return true;
+                }
+            }
+
+            // Check columns
+            for (int j = 0; j < 4; j++)
+            {
+                if (Board[0, j] != TileState.Empty && Board[0, j] == Board[1, j] && Board[1, j] == Board[2, j] && Board[2, j] == Board[3, j])
+                {
+                    return true;
+                }
+            }
+
+            // Check diagonals
+            if (Board[0, 0] != TileState.Empty && Board[0, 0] == Board[1, 1] && Board[1, 1] == Board[2, 2] && Board[2, 2] == Board[3, 3])
+            {
+                return true;
+            }
+
+            if (Board[0, 3] != TileState.Empty && Board[0, 3] == Board[1, 2] && Board[1, 2] == Board[2, 1] && Board[2, 1] == Board[3, 0])
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool CheckForTie()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 4; j++)
+                {
+                    if (Board[i, j] == TileState.Empty)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+    }
+
+}

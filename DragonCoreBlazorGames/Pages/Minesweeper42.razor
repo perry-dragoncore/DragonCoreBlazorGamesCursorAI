@@ -1,0 +1,356 @@
+﻿@page "/minesweeper42"
+@using System
+
+@using System.Text.RegularExpressions
+
+<h1>Minesweeper</h1>
+
+<div class="game-container">
+    <div class="game-header">
+        <button @onclick="NewGame">New Game</button>
+        <span class="mines-left">@MinesLeft</span> Mines Left
+        <span class="game-state">@GameStateString</span>
+    </div>
+    <div class="game-board">
+        @for (int row = 0; row < Rows; row++)
+        {
+            <div class="game-row">
+                @for (int col = 0; col < Cols; col++)
+                {
+                    int r = row; // create a local copy of i for each iteration
+                    int c = col; // create a local copy of i for each iteration
+                    var revealed = CellRevealed[r, c];
+                    var cell = CellContents[r, c];
+                    var flagged = CellFlagged[r, c];
+                    <div class="game-cell @(revealed ? "revealed" : "hidden")"
+                         @onclick="@(() => ClickCell(r, c))"
+                         @oncontextmenu="@((e) => { FlagCell(r, c); })"
+                         @onclick:preventDefault
+                         @oncontextmenu:preventDefault>
+                        @(flagged ? "F" : cell) 
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+        margin: 20px;
+    }
+
+    .game-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 10px;
+    }
+
+    .game-board {
+        border: 2px solid #999;
+        display: flex;
+        flex-direction: column;
+        padding: 5px;
+    }
+
+    .game-row {
+        display: flex;
+    }
+
+    .game-cell {
+        width: 25px;
+        height: 25px;
+        border: 1px solid #ccc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: bold;
+        user-select: none;
+    }
+
+        .game-cell.revealed {
+            background-color: #eee;
+        }
+
+        .game-cell.revealed-0 {
+            color: #fff;
+        }
+
+        .game-cell.revealed-1 {
+            color: blue;
+        }
+
+        .game-cell.revealed-2 {
+            color: green;
+        }
+
+        .game-cell.revealed-3 {
+            color: red;
+        }
+
+        .game-cell.revealed-4 {
+            color: darkblue;
+        }
+
+        .game-cell.revealed-5 {
+            color: brown;
+        }
+
+        .game-cell.revealed-6 {
+            color: cyan;
+        }
+
+        .game-cell.revealed-7 {
+            color: black;
+        }
+
+        .game-cell.revealed-8 {
+            color: gray;
+        }
+
+        .game-cell.flagged {
+            color: red;
+        }
+
+    .mines-left {
+        font-weight: bold;
+        margin-right: 10px;
+    }
+
+    .game-state {
+        font-weight: bold;
+        margin-left: 10px;
+    }
+
+        .game-state.lost {
+            color: red;
+        }
+
+        .game-state.won {
+            color: green;
+        }
+</style>
+@code {
+    private const int Rows = 42;
+    private const int Cols = 42;
+    private const int Mines = 42;
+    private string[,] CellContents = new string[Rows, Cols];
+    private bool[,] CellRevealed = new bool[Rows, Cols];
+    private bool[,] CellFlagged = new bool[Rows, Cols];
+    private bool[,] CellMined = new bool[Rows, Cols];
+    private int[,] NeighborMineCounts = new int[Rows, Cols];
+
+    private int MinesLeft => Mines - CountFlagged();
+    private bool GameLost { get; set; }
+    private bool GameWon { get; set; }
+    //private bool GameLost => CellRevealed.Cast<bool>().Contains(true) && CellMined.Cast<bool>().Contains(true);
+    //private bool GameWon => !CellRevealed.Cast<bool>().Contains(false) && CountFlagged() == Mines;
+
+    private string GameStateString
+    {
+        get
+        {
+            if (GameLost)
+            {
+                return "You lost :(";
+            }
+            else if (GameWon)
+            {
+                return "You won!";
+            }
+            else
+            {
+                return "";
+            }
+        }
+    }
+
+    private void NewGame()
+    {
+        // Reset game state
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                CellContents[row, col] = "";
+                CellRevealed[row, col] = false;
+                CellFlagged[row, col] = false;
+                CellMined[row, col] = false;
+                NeighborMineCounts[row, col] = 0;
+            }
+        }
+
+        // Plant mines
+        Random rand = new Random();
+        int minesPlanted = 0;
+        while (minesPlanted < Mines)
+        {
+            int row = rand.Next(Rows);
+            int col = rand.Next(Cols);
+            if (!CellMined[row, col])
+            {
+                CellMined[row, col] = true;
+                minesPlanted++;
+            }
+        }
+
+        // Compute neighbor mine counts
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                if (CellMined[row, col])
+                {
+                    continue;
+                }
+
+                int count = 0;
+                foreach (var neighbor in GetNeighbors(row, col))
+                {
+                    if (CellMined[neighbor.row, neighbor.col])
+                    {
+                        count++;
+                    }
+                }
+                NeighborMineCounts[row, col] = count;
+            }
+        }
+    }
+
+    private int CountUnrevealed()
+    {
+        int count = 0;
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                if (!CellRevealed[row, col])
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+
+    private void ClickCell(int row, int col)
+    {
+        if (GameLost || GameWon)
+        {
+            return;
+        }
+
+        if (CellMined[row, col])
+        {
+            CellRevealed[row, col] = true;
+            RevealMines();
+            GameLost = true;
+            return;
+        }
+
+        RevealCell(row, col);
+
+        if (CountFlagged() == Mines && CountUnrevealed() == Mines)
+        {
+            GameWon = true;
+        }
+    }
+
+    private void FlagCell(int row, int col)
+    {
+        if (CellRevealed[row, col])
+        {
+            return;
+        }
+
+        CellFlagged[row, col] = !CellFlagged[row, col];
+    }
+
+    private void RevealCell(int row, int col)
+    {
+        if (CellRevealed[row, col])
+        {
+            return;
+        }
+
+        CellRevealed[row, col] = true;
+        if (NeighborMineCounts[row, col] == 0)
+        {
+            foreach (var neighbor in GetNeighbors(row, col))
+            {
+                RevealCell(neighbor.row, neighbor.col);
+            }
+        }
+        else
+        {
+            CellContents[row, col] = NeighborMineCounts[row, col].ToString();
+        }
+    }
+
+    private void RevealMines()
+    {
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                if (CellMined[row, col])
+                {
+                    CellContents[row, col] = "*";
+                    CellRevealed[row, col] = true;
+                }
+            }
+        }
+    }
+
+    private IEnumerable<(int row, int col)> GetNeighbors(int row, int col)
+    {
+        int[] offsets = { -1, 0, 1 };
+        foreach (int rowOffset in offsets)
+        {
+            foreach (int colOffset in offsets)
+            {
+                if (rowOffset == 0 && colOffset == 0)
+                {
+                    continue;
+                }
+
+                int neighborRow = row + rowOffset;
+                int neighborCol = col + colOffset;
+                if (neighborRow < 0 || neighborRow >= Rows || neighborCol < 0 || neighborCol >= Cols)
+                {
+                    continue;
+                }
+
+                yield return (neighborRow, neighborCol);
+            }
+        }
+    }
+
+    private int CountFlagged()
+    {
+        int count = 0;
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Cols; col++)
+            {
+                if (CellFlagged[row, col])
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    protected override void OnInitialized()
+    {
+        NewGame();
+    }
+}

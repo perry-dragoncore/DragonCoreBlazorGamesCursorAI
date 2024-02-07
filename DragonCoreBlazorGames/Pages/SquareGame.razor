@@ -1,0 +1,188 @@
+﻿@page "/memory-match"
+@using System.Linq
+
+<h1>Memory Match</h1>
+@if (!gameOver)
+{
+    <p>Time Remaining: @timeRemaining</p>
+}
+else
+{
+    <p>Time Elapsed: @elapsedTime.TotalSeconds seconds</p>
+    <button @onclick="ResetGame">Play Again</button>
+}
+
+<div class="board">
+    @foreach (var row in board)
+    {
+        <div class="row">
+            @foreach (var square in row)
+            {
+                <div class="square @(square.State)">
+                    @if (square.State == SquareState.Visible)
+                    {
+                        <img src="@square.ImageUrl" alt="card" @onclick="() => HandleSquareClick(square)" />
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+        const int BoardSize = 4;
+        const int MatchesNeeded = 8;
+        const int GameDurationSeconds = 60;
+
+enum SquareState
+    {
+        Hidden,
+        Visible,
+        Matched
+    }
+
+    class Square
+    {
+        public string ImageUrl { get; set; }
+        public SquareState State { get; set; }
+    }
+
+    Square[][] board;
+    Square[] visibleSquares = new Square[2];
+    int matches;
+    int timeRemaining;
+    bool gameOver;
+    DateTime startTime;
+    TimeSpan elapsedTime;
+
+    void InitializeBoard()
+    {
+        var imageUrls = Enumerable.Range(1, 8).Select(i => $"/images/{i}.jpg").ToList();
+        var squares = new List<Square>();
+        for (int i = 0; i < BoardSize * BoardSize / 2; i++)
+        {
+            squares.Add(new Square { ImageUrl = imageUrls[i], State = SquareState.Hidden });
+            squares.Add(new Square { ImageUrl = imageUrls[i], State = SquareState.Hidden });
+        }
+        squares = squares.OrderBy(_ => Guid.NewGuid()).ToList();
+
+        board = new Square[BoardSize][];
+        for (int i = 0; i < BoardSize; i++)
+        {
+            board[i] = squares.Skip(i * BoardSize).Take(BoardSize).ToArray();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        InitializeBoard();
+        StartTimer();
+    }
+
+    void HandleSquareClick(Square square)
+    {
+        if (!gameOver && square.State == SquareState.Hidden)
+        {
+            if (visibleSquares[0] == null)
+            {
+                visibleSquares[0] = square;
+                square.State = SquareState.Visible;
+            }
+            else if (visibleSquares[1] == null)
+            {
+                visibleSquares[1] = square;
+                square.State = SquareState.Visible;
+                if (visibleSquares[0].ImageUrl == visibleSquares[1].ImageUrl)
+                {
+                    visibleSquares[0].State = visibleSquares[1].State = SquareState.Matched;
+                    visibleSquares = new Square[2];
+                    matches++;
+                    if (matches == MatchesNeeded)
+                    {
+                        EndGame();
+                    }
+                }
+                else
+                {
+                    _ = HideSquaresAsync();
+                }
+            }
+        }
+    }
+
+    async Task HideSquaresAsync()
+    {
+        await Task.Delay(1000);
+        visibleSquares[0].State = visibleSquares[1].State = SquareState.Hidden;
+        visibleSquares = new Square[2];
+        StateHasChanged();
+    }
+
+    void StartTimer()
+    {
+        startTime = DateTime.UtcNow;
+        _ = UpdateTimer();
+    }
+    async Task UpdateTimer()
+    {
+        while (!gameOver)
+        {
+            var timeElapsed = DateTime.UtcNow - startTime;
+            elapsedTime = timeElapsed;
+            timeRemaining = Math.Max(0, GameDurationSeconds - (int)timeElapsed.TotalSeconds);
+            if (timeRemaining == 0)
+            {
+                EndGame();
+            }
+            StateHasChanged();
+            await Task.Delay(1000);
+        }
+    }
+    void EndGame()
+    {
+        gameOver = true;
+    }
+
+    void ResetGame()
+    {
+        InitializeBoard();
+        StartTimer();
+        matches = 0;
+        timeRemaining = GameDurationSeconds;
+        elapsedTime = TimeSpan.Zero;
+        gameOver = false;
+    }
+
+}
+
+
+@*<div class="square" @onclick="Click">
+        @if (showImage)
+        {
+            <img src="@Image" />
+        }
+    </div>
+
+    @code {
+        [Parameter]
+        public string Image { get; set; }
+
+        [Parameter]
+        public EventCallback<string> OnClick { get; set; }
+
+        private bool showImage = false;
+
+        public async Task Click()
+        {
+            if (!showImage)
+            {
+                showImage = true;
+                await OnClick.InvokeAsync(Image);
+            }
+        }
+
+        public void Reset()
+        {
+            showImage = false;
+        }
+    }*@

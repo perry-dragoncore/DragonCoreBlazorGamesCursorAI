@@ -1,0 +1,79 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="\">DragonCoreBlazorGames</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="oi oi-home" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/tictactoe" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Tic Tac Toe
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/tictactoe4x4" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Tic Tac Toe 4x4
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/whackadragon" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Whack a Dragon
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/connect4" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Connect 4
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/textadventure" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Text Adventure
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/memory" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Memory Match
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/minesweeper" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Minesweeper
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/minesweeper42" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Minesweeper 42
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/mastermind" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Mastermind
+            </NavLink>
+        </div>
+        @*<div class="nav-item px-3">
+            <NavLink class="nav-link" href="/checkers" Match="NavLinkMatch.All">
+                <span class="oi oi-link-intact" aria-hidden="true"></span> Checkers
+            </NavLink>
+        </div>*@
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

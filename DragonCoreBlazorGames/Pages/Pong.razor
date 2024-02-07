@@ -1,0 +1,119 @@
+﻿@page "/pong"
+@inject IJSRuntime JsRuntime
+@using Microsoft.AspNetCore.Components.Web
+
+<h3>Pong</h3>
+
+@*
+    Now let's create a Blazor component that displays the game and handles user input.
+    We'll use the HTML5 Canvas API to draw the game elements, and we'll use Blazor's `@key`
+    directive to force the canvas to redraw whenever the game state changes:
+*@
+
+@*@inherits Microsoft.AspNetCore.Components.WebAssembly.Components.WebAssemblyComponent*@
+
+<canvas id="canvas" @ref="canvasRef" @onmousemove="HandleMouseMove"></canvas>
+
+@code {
+    private IJSRuntime _jsRuntime;
+    
+    @*@inherits Microsoft.AspNetCore.Components.WebAssembly.Components.WebAssemblyComponent*@
+
+private PongGame _game = new PongGame();
+private ElementReference canvasRef;
+private bool _firstRender = true;
+
+protected override async Task OnAfterRenderAsync(bool firstRender)
+{
+    if (firstRender)
+    {
+        await _jsRuntime.InvokeVoidAsync("registerPongGame", DotNetObjectReference.Create(this), canvasRef);
+
+        await RequestAnimationFrame();
+        _firstRender = false;
+    }
+}
+
+
+protected override void OnInitialized()
+{
+    _jsRuntime = JsRuntime;
+}
+
+private async Task RequestAnimationFrame()
+{
+    await _jsRuntime.InvokeVoidAsync("requestAnimationFrame", DotNetObjectReference.Create(this));
+}
+
+[JSInvokable]
+public async Task Update(double elapsedSeconds)
+{
+    _game.Update(elapsedSeconds);
+    await Draw();
+    await RequestAnimationFrame();
+}
+
+private async Task Draw()
+{
+    var canvas = await _jsRuntime.InvokeAsync<IJSObjectReference>("getContext", canvasRef, "2d");
+
+    // Clear canvas
+    await canvas.InvokeVoidAsync("clearRect", 0, 0, 800, 600);
+
+    // Draw ball
+    await canvas.InvokeVoidAsync("fillRect", _game.Ball.Left, _game.Ball.Top, _game.Ball.Width, _game.Ball.Height);
+
+    // Draw paddles
+    await canvas.InvokeVoidAsync("fillRect", _game.Player1Paddle.Bounds.Left, _game.Player1Paddle.Bounds.Top, _game.Player1Paddle.Bounds.Width, _game.Player1Paddle.Bounds.Height);
+    await canvas.InvokeVoidAsync("fillRect", _game.Player2Paddle.Bounds.Left, _game.Player2Paddle.Bounds.Top, _game.Player2Paddle.Bounds.Width, _game.Player2Paddle.Bounds.Height);
+}
+
+private async Task HandleMouseMove(MouseEventArgs e)
+{
+    //_game.Player1Paddle = new Rect(
+    //    _game.Player1Paddle.Bounds.Left,
+    //    e.ClientY - (await canvasRef.InvokeAsync<double>("getBoundingClientRect")).Top - _game.Player1Paddle.Bounds.Height / 2,
+    //    _game.Player1Paddle.Bounds.Width,
+    //    _game.Player1Paddle.Bounds.Height);
+
+    //_game.Player1Paddle = new Rect(
+    //_game.Player1Paddle.Bounds.Left,
+    //e.ClientY - (await canvasRef.Value.GetBoundingClientRect()).Top - _game.Player1Paddle.Bounds.Height / 2,
+    //_game.Player1Paddle.Bounds.Width,
+    //_game.Player1Paddle.Bounds.Height);
+
+
+    await Draw();
+}
+
+public async ValueTask DisposeAsync()
+{
+    await _jsRuntime.InvokeVoidAsync("unregisterPongGame", canvasRef);
+}
+
+public class Canvas
+{
+    private readonly ElementReference _canvas;
+
+    public Canvas(ElementReference canvas)
+    {
+        _canvas = canvas;
+    }
+
+    public async Task ClearRect(int x, int y, int width, int height)
+    {
+        //await _canvas.JSInvokeVoidAsync("clearRect", x, y, width, height);
+    }
+
+    //public string FillStyle
+    //{
+    //    //get => _canvas.JSInvoke<string>("getContext", "2d").FillStyle;
+    //    //set => _canvas.JSInvokeVoid("getContext", "2d").FillStyle = value;
+    //}
+
+    public async Task FillRect(int x, int y, int width, int height)
+    {
+        //await _canvas.JSInvokeVoidAsync("fillRect", x, y, width, height);
+    }
+}
+}

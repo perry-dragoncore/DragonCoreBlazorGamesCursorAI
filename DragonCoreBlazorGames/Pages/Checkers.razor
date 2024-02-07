@@ -1,0 +1,128 @@
+﻿@*@page "/checkers"
+
+<style>
+    .checkers-board {
+        display: flex;
+        flex-direction: column;
+        margin: 1rem auto;
+        width: 60vmin;
+        height: 60vmin;
+        border: 2px solid black;
+    }
+
+    .checkers-row {
+        display: flex;
+        flex-direction: row;
+        width: 100%;
+        height: 12.5%;
+    }
+
+    .checkers-square {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 12.5%;
+        height: 100%;
+    }
+
+        .checkers-square.white {
+            background-color: #EEE;
+        }
+
+        .checkers-square.black {
+            background-color: #333;
+        }
+
+    .checkers-piece {
+        border-radius: 50%;
+        width: 80%;
+        height: 80%;
+    }
+
+        .checkers-piece.red {
+            background-color: red;
+        }
+
+        .checkers-piece.black {
+            background-color: black;
+        }
+
+        .checkers-piece.king::after {
+            content: "\265B";
+            font-size: 2rem;
+            color: white;
+        }
+
+    .checkers-game-over {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 1rem;
+    }
+
+        .checkers-game-over h2 {
+            margin-bottom: 1rem;
+        }
+
+        .checkers-game-over button {
+            padding: 0.5rem 1rem;
+            font-size: 1.2rem;
+            border: 2px solid black;
+            border-radius: 0.5rem;
+            background-color: white;
+            cursor: pointer;
+        }
+
+            .checkers-game-over button:hover {
+                background-color: #EEE;
+            }
+</style>
+
+<div class="checkers-board">
+    @for (int row = 0; row < 8; row++)
+    {
+        <div class="checkers-row">
+            @for (int col = 0; col < 8; col++)
+            {
+                <div class="checkers-cell @(row % 2 == col % 2 ? "even" : "odd")">
+                    @if (Game.Board[row][col] != null)
+                    {
+                        <div class="checkers-piece @(Game.Board[row][col].Player.ToString().ToLower()) @(Game.Board[row][col].IsKing ? "king" : "")"></div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+
+@if (Game.IsOver)
+{
+    <div class="checkers-game-over">
+        <h2>Game Over</h2>
+        <p>@Game.EndMessage</p>
+        <button @onclick="ResetGame">Play Again</button>
+    </div>
+}
+@code {
+    private CheckersGame Game { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Game = new CheckersGame();
+        base.OnInitialized();
+    }
+
+    private void SquareClicked(CheckersSquare square)
+    {
+        if (!Game.IsOver)
+        {
+            Game.MovePiece(square);
+        }
+    }
+
+    private void ResetGame()
+    {
+        Game.Reset();
+    }
+}*@
