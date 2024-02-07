@@ -6,3 +6,4 @@ I spent about 5 hours making these games as well as a few that had to be abandon
 
 It would be interesting to do this activity again agains the new AI.  
 
+If you want to just check out the games -> https://dragoncoreblazorgames2023.azurewebsites.net
