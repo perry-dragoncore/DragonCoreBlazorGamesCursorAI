@@ -1,180 +1,7 @@
 ﻿@page "/tictactoe"
 @inject IJSRuntime JSRuntime
+<link href="css/tictactoe.css" rel="stylesheet" />
 
-<style>
-    .game-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        font-family: Arial, sans-serif;
-        padding: 20px;
-        width: 100%;
-        max-width: 500px;
-    }
-
-    .game-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 500px;
-        margin-bottom: 20px;
-        gap: 20px;
-        padding: 10px;
-    }
-
-    .player-info {
-        display: flex;
-        align-items: center;
-        padding: 8px 16px;
-        border-radius: 8px;
-        background: #f0f0f0;
-        transition: all 0.3s ease;
-        min-width: 100px;
-        white-space: nowrap;
-    }
-
-    .player-info.active {
-        background: #4CAF50;
-        transform: scale(1.05);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        color: white;
-    }
-
-    .player-icon {
-        width: 24px;
-        height: 24px;
-        margin-right: 8px;
-    }
-
-    .board {
-        display: grid;
-        grid-template-columns: repeat(3, 100px);
-        grid-template-rows: repeat(3, 100px);
-        grid-gap: 10px;
-        margin-bottom: 20px;
-        background: linear-gradient(135deg, #2196F3, #1976D2);
-        padding: 10px;
-        border-radius: 10px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-    }
-
-    .cell {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background-color: white;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-
-    .cell:hover:empty {
-        background-color: #f5f5f5;
-        transform: scale(1.05);
-    }
-
-    .cell.winning {
-        background-color: #a5d6a7;
-        animation: pulse 1s infinite;
-    }
-
-    .cell img {
-        max-width: 80%;
-        max-height: 80%;
-        animation: appear 0.3s ease-out;
-    }
-
-    .cell img.winning-piece {
-        animation: spin 2s infinite;
-    }
-
-    .new-game-btn {
-        padding: 8px 16px;
-        font-size: 16px;
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-
-    .new-game-btn:hover {
-        background-color: #45a049;
-        transform: scale(1.05);
-    }
-
-    .leaderboard {
-        margin-top: 30px;
-        text-align: center;
-        width: 100%;
-        max-width: 400px;
-    }
-
-    .leaderboard h2 {
-        color: #2c3e50;
-        margin-bottom: 20px;
-    }
-
-    .leaderboard table {
-        width: 100%;
-        border-collapse: collapse;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .leaderboard th,
-    .leaderboard td {
-        padding: 12px;
-        text-align: center;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .leaderboard th {
-        background-color: #2196F3;
-        color: white;
-        font-weight: bold;
-    }
-
-    .leaderboard tr:nth-child(even) {
-        background-color: #f2f2f2;
-    }
-
-    .leaderboard tr:hover {
-        background-color: #e9ecef;
-    }
-
-    .leaderboard-icon {
-        width: 20px;
-        height: 20px;
-        vertical-align: middle;
-        margin-right: 5px;
-    }
-
-    @@keyframes appear {
-        from { 
-            opacity: 0;
-            transform: scale(0.5);
-        }
-        to { 
-            opacity: 1;
-            transform: scale(1);
-        }
-    }
-
-    @@keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-        100% { transform: scale(1); }
-    }
-
-    @@keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-</style>
 
 <div class="game-title">
     <i class="fas fa-times-circle"></i>
@@ -191,14 +18,21 @@
 <div class="game-container">
     <div class="game-header">
         <button @onclick="Reset" class="new-game-btn">New Game</button>
-        <div class="player-info @(CurrentPlayer == 0 ? "active" : "")">
-            <img src="/images/X.png" class="player-icon" />
-            <span>Player 1</span>
-        </div>
-        <div class="player-info @(CurrentPlayer == 1 ? "active" : "")">
-            <img src="/images/O.png" class="player-icon" />
-            <span>Player 2</span>
-        </div>
+        @if (Winner == "Draw")
+        {
+            <div class="draw-message">Game Draw!</div>
+        }
+        else
+        {
+            <div class="player-info @(CurrentPlayer == 0 ? "active" : "")">
+                <img src="/images/X.png" class="player-icon" />
+                <span>Player 1</span>
+            </div>
+            <div class="player-info @(CurrentPlayer == 1 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")">
+                <img src="/images/O.png" class="player-icon" />
+                <span>Computer AI</span>
+            </div>
+        }
     </div>
 
     <div class="board">
@@ -253,7 +87,7 @@
 </div>
 
 @code {
-    private string[] Players = new[] { "Player 1", "Player 2" };
+    private string[] Players = new[] { "Player 1", "Computer AI" };
     private string[] Symbols = new[] { "/images/X.png", "/images/O.png" };
     private int CurrentPlayer = 0;
     private string[] Board = new string[9];
@@ -262,6 +96,8 @@
     private int moveCount = 0;
     private List<LeaderboardEntry> leaderboard = new();
     private const int MaxLeaderboardEntries = 5;
+    private bool isAIThinking = false;
+    private Random random = new Random();
 
     private class LeaderboardEntry
     {
@@ -277,26 +113,133 @@
 
     private async Task OnCellClicked(int index)
     {
-        if (Board[index] == null && Winner == null)
-        {
-            moveCount++;
-            Board[index] = Symbols[CurrentPlayer];
-            await PlaySound("moveSound");
+        if (CurrentPlayer == 1 || Board[index] != null || Winner != null) return;
 
-            if (CheckWinner(Symbols[CurrentPlayer]))
+        moveCount++;
+        Board[index] = Symbols[CurrentPlayer];
+        await PlaySound("moveSound");
+
+        if (CheckWinner(Symbols[CurrentPlayer]))
+        {
+            Winner = Players[CurrentPlayer];
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
+            return;
+        }
+        else if (IsDraw())
+        {
+            Winner = "Draw";
+            return;
+        }
+
+        CurrentPlayer = 1;
+        isAIThinking = true;
+        StateHasChanged();
+
+        await Task.Delay(500);
+        await MakeAIMove();
+
+        isAIThinking = false;
+    }
+
+    private async Task MakeAIMove()
+    {
+        var winningMove = FindWinningMove(1);
+        if (winningMove != -1)
+        {
+            await MakeMove(winningMove);
+            return;
+        }
+
+        var blockingMove = FindWinningMove(0);
+        if (blockingMove != -1)
+        {
+            await MakeMove(blockingMove);
+            return;
+        }
+
+        if (Board[4] == null)
+        {
+            await MakeMove(4);
+            return;
+        }
+
+        var corners = new[] { 0, 2, 6, 8 };
+        var availableCorners = corners.Where(i => Board[i] == null).ToList();
+        if (availableCorners.Any())
+        {
+            await MakeMove(availableCorners[random.Next(availableCorners.Count)]);
+            return;
+        }
+
+        var availableMoves = Enumerable.Range(0, 9).Where(i => Board[i] == null).ToList();
+        if (availableMoves.Any())
+        {
+            await MakeMove(availableMoves[random.Next(availableMoves.Count)]);
+        }
+    }
+
+    private int FindWinningMove(int player)
+    {
+        var tempBoard = Board.ToArray();
+
+        for (int i = 0; i < 9; i++)
+        {
+            if (tempBoard[i] != null) continue;
+
+            tempBoard[i] = Symbols[player];
+
+            if (CheckWinningMove(tempBoard, Symbols[player]))
             {
-                Winner = Players[CurrentPlayer];
-                await PlaySound("winSound");
-                await SaveLeaderboardEntry();
+                return i;
             }
-            else if (moveCount == 9)
+
+            tempBoard[i] = null;
+        }
+        return -1;
+    }
+
+    private bool CheckWinningMove(string[] boardState, string symbol)
+    {
+        int[][] winPatterns = new int[][]
+        {
+            new int[] {0, 1, 2}, new int[] {3, 4, 5}, new int[] {6, 7, 8}, // Rows
+            new int[] {0, 3, 6}, new int[] {1, 4, 7}, new int[] {2, 5, 8}, // Columns
+            new int[] {0, 4, 8}, new int[] {2, 4, 6} // Diagonals
+        };
+
+        foreach (var pattern in winPatterns)
+        {
+            if (boardState[pattern[0]] == symbol && 
+                boardState[pattern[1]] == symbol && 
+                boardState[pattern[2]] == symbol)
             {
-                Winner = "Draw";
+                return true;
             }
-            else
-            {
-                CurrentPlayer = (CurrentPlayer + 1) % 2;
-            }
+        }
+
+        return false;
+    }
+
+    private async Task MakeMove(int index)
+    {
+        moveCount++;
+        Board[index] = Symbols[CurrentPlayer];
+        await PlaySound("moveSound");
+
+        if (CheckWinner(Symbols[CurrentPlayer]))
+        {
+            Winner = Players[CurrentPlayer];
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
+        }
+        else if (IsDraw())
+        {
+            Winner = "Draw";
+        }
+        else
+        {
+            CurrentPlayer = 0;
         }
     }
 
@@ -383,5 +326,13 @@
     protected override async Task OnInitializedAsync()
     {
         leaderboard = await LoadLeaderboard();
+    }
+
+    private bool IsDraw()
+    {
+        if (CheckWinner(Symbols[0]) || CheckWinner(Symbols[1]))
+            return false;
+
+        return !Board.Any(cell => cell == null);
     }
 }

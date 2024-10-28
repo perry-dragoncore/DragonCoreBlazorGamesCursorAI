@@ -27,9 +27,9 @@
             <span>Player 1</span>
             <span class="piece-count">x @player1Pieces</span>
         </div>
-        <div class="player-info @(currentPlayer == 2 ? "active" : "")">
+        <div class="player-info @(currentPlayer == -1 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")">
             <div class="piece black"></div>
-            <span>Player 2</span>
+            <span>Computer AI</span>
             <span class="piece-count">x @player2Pieces</span>
         </div>
     </div>
@@ -63,7 +63,7 @@
     {
         <div class="game-over">
             <h2>Game Over!</h2>
-            <p>Player @winner Wins!</p>
+            <p>@(winner == 1 ? "Player 1" : "Computer AI") Wins!</p>
             <button class="new-game-btn" @onclick="NewGame">Play Again</button>
         </div>
     }
@@ -93,7 +93,7 @@
                             <td>#@(i + 1)</td>
                             <td>
                                 <div class="piece @(entry.Winner == 1 ? "red" : "black") mini"></div>
-                                Player @entry.Winner
+                                @(entry.Winner == 1 ? "Player 1" : "Computer AI")
                             </td>
                             <td>@entry.PiecesLeft</td>
                             <td>@entry.Date.ToShortDateString()</td>
@@ -276,6 +276,8 @@
     private List<(int Row, int Col)> validMoves = new();
     private List<LeaderboardEntry> leaderboard = new();
     private const int MaxLeaderboardEntries = 5;
+    private bool isAIThinking = false;
+    private Random random = new Random();
 
     private class LeaderboardEntry
     {
@@ -319,7 +321,7 @@
 
     private async Task HandleSquareClick(int row, int col)
     {
-        if (gameOver) return;
+        if (gameOver || isAIThinking || currentPlayer == -1) return; // Prevent moves during AI turn
 
         if (selectedPiece == null)
         {
@@ -385,6 +387,106 @@
         {
             selectedPiece = null;
             validMoves.Clear();
+        }
+
+        if (currentPlayer == -1 && !gameOver)
+        {
+            isAIThinking = true;
+            StateHasChanged();
+            await Task.Delay(500); // Add a small delay to make AI seem like it's thinking
+            await MakeAIMove();
+            isAIThinking = false;
+        }
+    }
+
+    private async Task MakeAIMove()
+    {
+        // Get all possible moves for AI
+        var possibleMoves = new List<(int FromRow, int FromCol, int ToRow, int ToCol, bool IsCapture)>();
+
+        // Find all AI pieces and their possible moves
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                if (board[row, col] < 0) // AI pieces are negative
+                {
+                    var moves = GetValidMoves(row, col);
+                    foreach (var move in moves)
+                    {
+                        bool isCapture = Math.Abs(move.Row - row) == 2;
+                        possibleMoves.Add((row, col, move.Row, move.Col, isCapture));
+                    }
+                }
+            }
+        }
+
+        if (possibleMoves.Any())
+        {
+            // Prioritize capture moves
+            var captureMoves = possibleMoves.Where(m => m.IsCapture).ToList();
+            var moveToMake = captureMoves.Any() 
+                ? captureMoves[random.Next(captureMoves.Count)]
+                : possibleMoves[random.Next(possibleMoves.Count)];
+
+            // Execute the move directly instead of using HandleSquareClick
+            var fromRow = moveToMake.FromRow;
+            var fromCol = moveToMake.FromCol;
+            var toRow = moveToMake.ToRow;
+            var toCol = moveToMake.ToCol;
+            bool wasCapture = Math.Abs(toRow - fromRow) == 2;
+            bool wasKing = Math.Abs(board[fromRow, fromCol]) == 2;
+
+            // Move the piece
+            board[toRow, toCol] = board[fromRow, fromCol];
+            board[fromRow, fromCol] = 0;
+
+            // Handle captures
+            if (wasCapture)
+            {
+                int capturedRow = (fromRow + toRow) / 2;
+                int capturedCol = (fromCol + toCol) / 2;
+                if (board[capturedRow, capturedCol] > 0)
+                    player1Pieces--;
+                board[capturedRow, capturedCol] = 0;
+                await PlaySound("captureSound");
+            }
+            else
+            {
+                await PlaySound("moveSound");
+            }
+
+            // King promotion
+            if (!wasKing && toRow == 7)
+            {
+                board[toRow, toCol] *= 2; // Make it a king
+                await PlaySound("kingSound");
+            }
+
+            // Check for game over
+            if (player1Pieces == 0)
+            {
+                gameOver = true;
+                winner = 2;
+                await PlaySound("winSound");
+                await SaveLeaderboardEntry();
+            }
+            else
+            {
+                // Switch back to player
+                currentPlayer *= -1;
+            }
+
+            selectedPiece = null;
+            validMoves.Clear();
+        }
+        else
+        {
+            // No moves available, AI loses
+            gameOver = true;
+            winner = 1;
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
         }
     }
 

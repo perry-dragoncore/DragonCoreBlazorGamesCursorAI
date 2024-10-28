@@ -1,0 +1,207 @@
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 500px;
+    margin-bottom: 20px;
+    gap: 20px;
+    padding: 10px;
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: #f0f0f0;
+    transition: all 0.3s ease;
+    min-width: 100px;
+    white-space: nowrap;
+}
+
+.player-info.active {
+    background: #4CAF50;
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    color: white;
+}
+
+.player-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(3, 100px);
+    grid-template-rows: repeat(3, 100px);
+    grid-gap: 10px;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #2196F3, #1976D2);
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.cell:hover:empty {
+    background-color: #f5f5f5;
+    transform: scale(1.05);
+}
+
+.cell.winning {
+    background-color: #a5d6a7;
+    animation: pulse 1s infinite;
+}
+
+.cell img {
+    max-width: 80%;
+    max-height: 80%;
+    animation: appear 0.3s ease-out;
+}
+
+.cell img.winning-piece {
+    animation: spin 2s infinite;
+}
+
+.new-game-btn {
+    padding: 8px 16px;
+    font-size: 16px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.new-game-btn:hover {
+    background-color: #45a049;
+    transform: scale(1.05);
+}
+
+.leaderboard {
+    margin-top: 30px;
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+}
+
+.leaderboard h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+}
+
+.leaderboard table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.leaderboard th,
+.leaderboard td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.leaderboard th {
+    background-color: #2196F3;
+    color: white;
+    font-weight: bold;
+}
+
+.leaderboard tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.leaderboard tr:hover {
+    background-color: #e9ecef;
+}
+
+.leaderboard-icon {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+@keyframes appear {
+    from {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.ai-thinking {
+    animation: thinking 1.5s infinite;
+}
+
+@keyframes thinking {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.draw-message {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #2c3e50;
+    padding: 10px 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    animation: fadeIn 0.5s ease-out;
+}

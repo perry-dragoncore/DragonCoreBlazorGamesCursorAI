@@ -14,8 +14,8 @@
             <span class="player-label">Player 1 (Green)</span>
             <span class="player-score">@player1Score</span>
         </div>
-        <div class="player-info @(currentPlayer == 2 ? "active" : "")" style="--player-color: #f44336;">
-            <span class="player-label">Player 2 (Red)</span>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")" style="--player-color: #f44336;">
+            <span class="player-label">Computer AI (Red)</span>
             <span class="player-score">@player2Score</span>
         </div>
     </div>
@@ -72,7 +72,7 @@
             }
             else if (player2Score > player1Score)
             {
-                <h2>Player 2 Wins!</h2>
+                <h2>Computer AI Wins!</h2>
             }
             else
             {
@@ -133,6 +133,8 @@
     private bool gameOver = false;
     private List<LeaderboardEntry> leaderboard = new();
     private const int MaxLeaderboardEntries = 5;
+    private bool isAIThinking = false;
+    private Random random = new Random();
 
     protected override async Task OnInitializedAsync()
     {
@@ -152,34 +154,44 @@
         gameOver = false;
     }
 
-    private void PlaceHorizontalLine(int row, int col)
+    private async Task PlaceHorizontalLine(int row, int col)
     {
-        if (horizontalLines[row, col] > 0 || gameOver) return;
+        if (horizontalLines[row, col] > 0 || gameOver || currentPlayer != 1) return;
 
         horizontalLines[row, col] = currentPlayer;
         bool boxCompleted = CheckBoxCompletion();
 
         if (!boxCompleted)
         {
-            currentPlayer = currentPlayer == 1 ? 2 : 1;
+            currentPlayer = 2;
+            await MakeAIMove();
+        }
+        else if (!gameOver)
+        {
+            await MakeAIMove();
         }
 
-        CheckGameOver();
+        await CheckGameOver();
     }
 
-    private void PlaceVerticalLine(int row, int col)
+    private async Task PlaceVerticalLine(int row, int col)
     {
-        if (verticalLines[row, col] > 0 || gameOver) return;
+        if (verticalLines[row, col] > 0 || gameOver || currentPlayer != 1) return;
 
         verticalLines[row, col] = currentPlayer;
         bool boxCompleted = CheckBoxCompletion();
 
         if (!boxCompleted)
         {
-            currentPlayer = currentPlayer == 1 ? 2 : 1;
+            currentPlayer = 2;
+            await MakeAIMove();
+        }
+        else if (!gameOver)
+        {
+            await MakeAIMove();
         }
 
-        CheckGameOver();
+        await CheckGameOver();
     }
 
     private bool CheckBoxCompletion()
@@ -293,5 +305,163 @@
         {
             leaderboard = new List<LeaderboardEntry>();
         }
+    }
+
+    private async Task MakeAIMove()
+    {
+        if (gameOver || currentPlayer != 2) return;
+
+        isAIThinking = true;
+        StateHasChanged();
+        await Task.Delay(500); // Add thinking delay
+
+        // Look for moves that complete boxes
+        var completingMove = FindCompletingMove();
+        if (completingMove.HasValue)
+        {
+            if (completingMove.Value.IsHorizontal)
+            {
+                horizontalLines[completingMove.Value.Row, completingMove.Value.Col] = 2;
+                bool completed = CheckBoxCompletion();
+                if (completed && !gameOver)
+                {
+                    await MakeAIMove();
+                    return;
+                }
+            }
+            else
+            {
+                verticalLines[completingMove.Value.Row, completingMove.Value.Col] = 2;
+                bool completed = CheckBoxCompletion();
+                if (completed && !gameOver)
+                {
+                    await MakeAIMove();
+                    return;
+                }
+            }
+        }
+        else
+        {
+            // Make a random move if no completing move is found
+            var availableMoves = GetAvailableMoves();
+            if (availableMoves.Any())
+            {
+                var move = availableMoves[random.Next(availableMoves.Count)];
+                if (move.IsHorizontal)
+                {
+                    horizontalLines[move.Row, move.Col] = 2;
+                }
+                else
+                {
+                    verticalLines[move.Row, move.Col] = 2;
+                }
+            }
+        }
+
+        if (!CheckBoxCompletion())
+        {
+            currentPlayer = 1;
+        }
+
+        isAIThinking = false;
+        StateHasChanged();
+    }
+
+    private (int Row, int Col, bool IsHorizontal)? FindCompletingMove()
+    {
+        // Check horizontal lines
+        for (int row = 0; row < boardSize; row++)
+        {
+            for (int col = 0; col < boardSize - 1; col++)
+            {
+                if (horizontalLines[row, col] == 0 && WouldCompleteLine(row, col, true))
+                {
+                    return (row, col, true);
+                }
+            }
+        }
+
+        // Check vertical lines
+        for (int row = 0; row < boardSize - 1; row++)
+        {
+            for (int col = 0; col < boardSize; col++)
+            {
+                if (verticalLines[row, col] == 0 && WouldCompleteLine(row, col, false))
+                {
+                    return (row, col, false);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private bool WouldCompleteLine(int row, int col, bool isHorizontal)
+    {
+        if (isHorizontal)
+        {
+            // Check if this horizontal line would complete a box above
+            if (row > 0 &&
+                horizontalLines[row - 1, col] > 0 &&
+                verticalLines[row - 1, col] > 0 &&
+                verticalLines[row - 1, col + 1] > 0)
+                return true;
+
+            // Check if this horizontal line would complete a box below
+            if (row < boardSize - 1 &&
+                horizontalLines[row + 1, col] > 0 &&
+                verticalLines[row, col] > 0 &&
+                verticalLines[row, col + 1] > 0)
+                return true;
+        }
+        else
+        {
+            // Check if this vertical line would complete a box to the left
+            if (col > 0 &&
+                verticalLines[row, col - 1] > 0 &&
+                horizontalLines[row, col - 1] > 0 &&
+                horizontalLines[row + 1, col - 1] > 0)
+                return true;
+
+            // Check if this vertical line would complete a box to the right
+            if (col < boardSize - 1 &&
+                verticalLines[row, col + 1] > 0 &&
+                horizontalLines[row, col] > 0 &&
+                horizontalLines[row + 1, col] > 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    private List<(int Row, int Col, bool IsHorizontal)> GetAvailableMoves()
+    {
+        var moves = new List<(int Row, int Col, bool IsHorizontal)>();
+
+        // Get available horizontal moves
+        for (int row = 0; row < boardSize; row++)
+        {
+            for (int col = 0; col < boardSize - 1; col++)
+            {
+                if (horizontalLines[row, col] == 0)
+                {
+                    moves.Add((row, col, true));
+                }
+            }
+        }
+
+        // Get available vertical moves
+        for (int row = 0; row < boardSize - 1; row++)
+        {
+            for (int col = 0; col < boardSize; col++)
+            {
+                if (verticalLines[row, col] == 0)
+                {
+                    moves.Add((row, col, false));
+                }
+            }
+        }
+
+        return moves;
     }
 }

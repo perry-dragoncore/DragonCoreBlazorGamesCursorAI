@@ -1,24 +1,6 @@
 ﻿@page "/pong"
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
-
-@code {
-    private IJSObjectReference? module;
-
-    protected override async Task OnInitializedAsync()
-    {
-        module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
-    }
-
-    async ValueTask IAsyncDisposable.DisposeAsync()
-    {
-        if (module is not null)
-        {
-            await module.DisposeAsync();
-        }
-    }
-}
-@inject IJSRuntime JSRuntime
 @using Microsoft.AspNetCore.Components.Web
 
 <div class="game-title">
@@ -54,9 +36,8 @@
             <p>S: Down</p>
         </div>
         <div class="control-info">
-            <h3>Player 2</h3>
-            <p>↑: Up</p>
-            <p>↓: Down</p>
+            <h3>Computer AI</h3>
+            <p>Auto-controlled</p>
         </div>
     </div>
 
@@ -64,7 +45,7 @@
     {
         <div class="game-over">
             <h2>Game Over!</h2>
-            <p>Player @winner Wins!</p>
+            <p>@(winner == 1 ? "Player 1" : "Computer AI") Wins!</p>
             <button class="new-game-btn" @onclick="StartNewGame">Play Again</button>
         </div>
     }
@@ -218,8 +199,12 @@
     private bool gameOver = false;
     private int winner = 0;
 
-    private bool player1Up, player1Down, player2Up, player2Down;
+    private bool player1Up, player1Down;
     private System.Threading.Timer gameTimer;
+
+    // Add AI difficulty tuning
+    private const double AI_REACTION_SPEED = 0.8; // 0-1, higher = faster reactions
+    private const double AI_PREDICTION_ERROR = 20; // pixels of random error in prediction
 
     protected override void OnInitialized()
     {
@@ -250,11 +235,12 @@
     {
         if (gameOver) return;
 
-        // Move paddles
+        // Move player 1 paddle
         if (player1Up && player1Y > 0) player1Y -= PaddleSpeed;
         if (player1Down && player1Y < BoardHeight - PaddleHeight) player1Y += PaddleSpeed;
-        if (player2Up && player2Y > 0) player2Y -= PaddleSpeed;
-        if (player2Down && player2Y < BoardHeight - PaddleHeight) player2Y += PaddleSpeed;
+
+        // AI movement
+        MoveAIPaddle();
 
         // Move ball
         ballX += ballSpeedX;
@@ -321,14 +307,37 @@
         gameTimer?.Dispose();
     }
 
+    private void MoveAIPaddle()
+    {
+        // Only move if ball is moving towards AI
+        if (ballSpeedX > 0)
+        {
+            // Predict where ball will intersect with AI paddle
+            double timeToIntercept = (BoardWidth - 70 - ballX) / ballSpeedX;
+            double predictedY = ballY + (ballSpeedY * timeToIntercept);
+
+            // Add some randomness to make AI imperfect
+            predictedY += new Random().NextDouble() * AI_PREDICTION_ERROR * 2 - AI_PREDICTION_ERROR;
+
+            // Keep prediction within board bounds
+            predictedY = Math.Max(0, Math.Min(BoardHeight - 10, predictedY));
+
+            // Calculate target position (center of paddle should align with ball)
+            double targetY = predictedY - (PaddleHeight / 2);
+            targetY = Math.Max(0, Math.Min(BoardHeight - PaddleHeight, targetY));
+
+            // Move towards target with reaction speed factor
+            double difference = targetY - player2Y;
+            player2Y += Math.Sign(difference) * PaddleSpeed * AI_REACTION_SPEED;
+        }
+    }
+
     private void HandleKeyPress(KeyboardEventArgs e)
     {
         switch (e.Key)
         {
             case "w": player1Up = true; break;
             case "s": player1Down = true; break;
-            case "ArrowUp": player2Up = true; break;
-            case "ArrowDown": player2Down = true; break;
         }
     }
 
@@ -338,8 +347,6 @@
         {
             case "w": player1Up = false; break;
             case "s": player1Down = false; break;
-            case "ArrowUp": player2Up = false; break;
-            case "ArrowDown": player2Down = false; break;
         }
     }
 
@@ -351,5 +358,22 @@
     public void Dispose()
     {
         gameTimer?.Dispose();
+    }
+}
+
+@code {
+    private IJSObjectReference? module;
+
+    protected override async Task OnInitializedAsync()
+    {
+        module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (module is not null)
+        {
+            await module.DisposeAsync();
+        }
     }
 }
