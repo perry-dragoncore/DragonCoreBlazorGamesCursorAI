@@ -2,15 +2,73 @@
 @using System.Text.RegularExpressions
 @inject IJSRuntime JsRuntime
 
-<h1>Text Adventure Game</h1>
+<link href="css/textadventure.css" rel="stylesheet" />
 
-<p>Enter a command to play:</p>
-
-<div>
-    <input type="text" @bind-value="InputValue" @bind-value:event="oninput" @onkeydown="OnKeyDown" />
+<div class="game-title">
+    <i class="fas fa-torii-gate"></i>
+    <h1>Samurai's Path</h1>
 </div>
 
-<p>@output</p>
+<audio id="bgMusic" preload="auto" loop>
+    <source src="sounds/samurai-theme.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <button id="musicToggle" class="music-btn" @onclick="ToggleMusic">
+            <i class="fas fa-volume-up"></i>
+        </button>
+        <div class="stats-item">
+            <span class="label">Current Location</span>
+            <span class="value">@currentRoom.ToUpper()</span>
+        </div>
+        <div class="stats-item">
+            <span class="label">Inventory</span>
+            <span class="value">@(inventory.Any() ? string.Join(", ", inventory.Select(i => i.Name)) : "Empty")</span>
+        </div>
+        <button class="game-btn" @onclick="RestartGame">New Game</button>
+    </div>
+
+    <div class="adventure-container">
+        <div class="image-display">
+            @if (!string.IsNullOrEmpty(currentImage))
+            {
+                <img src="@currentImage" 
+                     alt="Scene" 
+                     class="scene-image @(isNewImage ? "fade-in" : "")"
+                     @onload="HandleImageLoad" />
+            }
+        </div>
+        <div class="output-window">
+            @foreach (var message in messageHistory)
+            {
+                <div class="@message.Type" id="@message.Id"></div>
+            }
+        </div>
+
+        <div class="input-container">
+            <span class="prompt">&gt;</span>
+            <input type="text" 
+                   @bind-value="InputValue" 
+                   @bind-value:event="oninput" 
+                   @onkeydown="OnKeyDown" 
+                   placeholder="Enter your command..."
+                   class="command-input" />
+        </div>
+
+        <div class="help-panel">
+            <h3>Available Commands:</h3>
+            <ul>
+                <li><strong>look</strong> - Observe your surroundings</li>
+                <li><strong>go [direction]</strong> - Move in a direction (north, south, east, west)</li>
+                <li><strong>take/get [item]</strong> - Pick up an item</li>
+                <li><strong>open/use [item]</strong> - Open things or use items</li>
+                <li><strong>inventory</strong> - Check your items</li>
+                <li><strong>meditate</strong> - Center yourself and review your inventory</li>
+            </ul>
+        </div>
+    </div>
+</div>
 
 @code {
     private IJSRuntime _jsRuntime;
@@ -37,101 +95,502 @@
             //InputValue = "";
         }
     }
+    
     private string output = "";
-    private int currentRoom = 1;
+    private string currentRoom = "garden";  // Instead of private int currentRoom = 1;
     private bool hasKey = false;
+    private string currentImage;
+    private bool isNewImage = true;
 
-    private string[][] rooms = new string[][] {
-        new string[] {"You are in the living room. There is a door to the north.", "north", null},
-        new string[] {"You are in the kitchen. There is a door to the south and a key on the table.", "south", "north"},
-        new string[] {"You are in the bedroom. There is a door to the east and a locked chest.", "east", "west"},
-        new string[] {"You are in the bathroom. There is a door to the west.", "west", "east"},
-        new string[] {"You are in the closet. There is a door to the south and a coat on the hanger.", "south", null},
-        new string[] {"You are in the garage. There is a door to the north and a car.", "north", "south"}
-    };
-
-    private string[] items = new string[] {
-        "key",
-        "coat"
-    };
-
-    private string[] directions = new string[] {
-        "north",
-        "south",
-        "east",
-        "west"
-    };
-
-    private async Task ProcessInput()
+    // Update the room and object system
+    private class RoomObject
     {
-        string[] words = InputValue.Split(' ');
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public bool CanTake { get; set; }
+        public bool IsHidden { get; set; } = false;
+        public string ImageUrl { get; set; }
+    }
 
-        if (words.Length == 1 && words[0] == "look")
+    private class Room
+    {
+        public string Description { get; set; }
+        public string North { get; set; }
+        public string South { get; set; }
+        public string East { get; set; }
+        public string West { get; set; }
+        public string ImageUrl { get; set; }
+        public Dictionary<string, RoomObject> Objects { get; set; } = new();
+    }
+
+    private Dictionary<string, Room> rooms = new()
+    {
+        ["garden"] = new Room
         {
-            output = rooms[currentRoom - 1][0];
-            if (items.Contains(words[0]))
+            Description = "You are in the Zen Garden. Stone paths lead north to the Main Hall. A peaceful koi pond ripples softly.",
+            North = "hall",
+            ImageUrl = "images/rooms/garden.webp",  
+            Objects = new Dictionary<string, RoomObject>
             {
-                output += " You see a " + words[0] + ".";
+                ["pond"] = new RoomObject 
+                { 
+                    Name = "koi pond", 
+                    Description = "Crystal clear water with colorful koi fish swimming lazily. A glint of metal catches your eye at the bottom.",
+                    CanTake = false,
+                    ImageUrl = "images/objects/koi-pond.webp"  
+                },
+                ["coin"] = new RoomObject 
+                { 
+                    Name = "ancient coin", 
+                    Description = "A weathered copper coin with strange markings.",
+                    CanTake = true,
+                    IsHidden = true // Only visible after examining pond
+                }
+            }
+        },
+        ["hall"] = new Room
+        {
+            Description = "You are in the Main Hall. Sliding doors lead south to the Garden and north to the Dojo. A katana hangs on the wall beside an ornate scroll.",
+            South = "garden",
+            North = "dojo",
+            ImageUrl = "images/rooms/hall.webp",  
+            Objects = new Dictionary<string, RoomObject>
+            {
+                ["katana"] = new RoomObject 
+                { 
+                    Name = "katana", 
+                    Description = "A finely crafted katana. The blade bears an inscription: 'The key lies in wisdom'.",
+                    CanTake = true,
+                },
+                ["scroll"] = new RoomObject 
+                { 
+                    Name = "scroll", 
+                    Description = "An ancient scroll depicting various martial arts stances. One shows a technique for breaking wooden objects.",
+                    CanTake = true 
+                }
+            }
+        },
+        ["dojo"] = new Room
+        {
+            Description = "You are in the Dojo. There is a door to the east and a mysterious wooden cabinet. Training dummies stand in the corner.",
+            East = "tearoom",
+            Objects = new Dictionary<string, RoomObject>
+            {
+                ["cabinet"] = new RoomObject 
+                { 
+                    Name = "cabinet", 
+                    Description = "A sturdy wooden cabinet with intricate carvings. It seems to be locked.",
+                    CanTake = false,
+                    ImageUrl = "images/objects/cabinet.webp"  
+                },
+                ["dummies"] = new RoomObject 
+                { 
+                    Name = "training dummies", 
+                    Description = "Well-used wooden training dummies. One has a small compartment carved into its base.",
+                    CanTake = false 
+                },
+                ["key"] = new RoomObject 
+                { 
+                    Name = "brass key", 
+                    Description = "A small brass key with a dragon motif.",
+                    CanTake = true,
+                    IsHidden = true // Only visible after examining dummies
+                }
+            }
+        },
+        ["tearoom"] = new Room
+        {
+            Description = "You are in the Tea Room. Tatami mats cover the floor. A door leads west. A low table holds a tea set.",
+            West = "dojo",
+            Objects = new Dictionary<string, RoomObject>
+            {
+                ["tea set"] = new RoomObject 
+                { 
+                    Name = "tea set", 
+                    Description = "A traditional tea ceremony set. Steam rises from the pot.",
+                    ImageUrl = "images/objects/tea-set.webp",
+                    CanTake = false 
+                },
+                ["cup"] = new RoomObject 
+                { 
+                    Name = "tea cup", 
+                    Description = "A delicate porcelain cup with a hidden compartment in its base.",
+                    CanTake = true 
+                }
             }
         }
-        else if (words.Length == 2 && words[0] == "go" && directions.Contains(words[1]))
+    };
+
+    // Change the inventory to store RoomObjects instead of strings
+    private List<RoomObject> inventory = new();
+
+    private List<Message> messageHistory = new List<Message>();
+
+    private class Message
+    {
+        public string Text { get; set; }
+        public string Type { get; set; }
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+    }
+
+    // Update how we set the currentImage
+    private async Task SetImage(string imageUrl)
+    {
+        if (currentImage != imageUrl)
         {
-            int nextRoom = GetNextRoom(words[1]);
-            if (nextRoom == -1)
+            isNewImage = false;
+            currentImage = imageUrl;
+            StateHasChanged();
+        }
+    }
+
+    // Update the ProcessInput method to use SetImage
+    private async Task ProcessInput()
+    {
+        if (string.IsNullOrWhiteSpace(InputValue)) return;
+
+        await AddMessage($"> {InputValue}", "player");
+        string input = InputValue.ToLower().Trim();
+
+        // Common words to ignore
+        string[] ignoreWords = { "the", "a", "an", "at", "to", "i", "want", "would", "like", "please", "can", "you" };
+        
+        // Clean up input
+        foreach (var word in ignoreWords)
+        {
+            input = input.Replace($" {word} ", " ");
+        }
+        input = input.Trim();
+
+        // Movement phrases
+        string[] moveWords = { "go", "walk", "move", "head", "travel", "run" };
+        string[] directions = { "north", "south", "east", "west" };
+
+        // Take/Get phrases
+        string[] takeWords = { "take", "get", "grab", "pick", "collect", "acquire" };
+
+        // Look phrases
+        string[] lookWords = { "look", "examine", "inspect", "check", "see", "view", "observe" };
+
+        // Add these arrays to the ProcessInput method
+        string[] openWords = { "open", "unlock", "access" };
+        string[] useWords = { "use", "utilize", "apply", "break" };
+
+        // Split cleaned input
+        string[] words = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return;
+
+        // Check for movement
+        if (moveWords.Any(w => input.Contains(w)) && directions.Any(d => input.Contains(d)))
+        {
+            string direction = directions.First(d => input.Contains(d));
+            string nextRoom = direction switch
             {
-                output = "You can't go that way.";
+                "north" => rooms[currentRoom].North,
+                "south" => rooms[currentRoom].South,
+                "east" => rooms[currentRoom].East,
+                "west" => rooms[currentRoom].West,
+                _ => null
+            };
+
+            if (nextRoom != null)
+            {
+                currentRoom = nextRoom;
+                await SetImage(rooms[currentRoom].ImageUrl);
+                await AddMessage($"You move silently to the next room...\n{rooms[currentRoom].Description}");
+                await SaveGameState();  // Save after movement
             }
             else
             {
-                currentRoom = nextRoom;
-                output = rooms[currentRoom - 1][0];
+                await AddMessage("You cannot go that way.", "error");
             }
-        }
-        else if (words.Length == 2 && words[0] == "take" && items.Contains(words[1]))
-        {
-            if (words[1] == "key")
-            {
-                hasKey = true;
-            }
-            output = "You take the " + words[1] + ".";
-        }
-        else if (words.Length == 2 && words[0] == "open" && words[1] == "chest" && currentRoom == 3 && hasKey)
-        {
-            output = "You open the chest and find a flashlight.";
-        }
-        else
-        {
-            output = "Invalid command.";
+            InputValue = "";
+            return;
         }
 
+        // Check for looking/examining
+        if (lookWords.Any(w => input.StartsWith(w)))
+        {
+            if (words.Length == 1)
+            {
+                await SetImage(rooms[currentRoom].ImageUrl);
+                await AddMessage(rooms[currentRoom].Description);
+                
+                // Wait for room description to finish typing
+                await Task.Delay(rooms[currentRoom].Description.Length * 10 + 100);
+                
+                var visibleObjects = rooms[currentRoom].Objects
+                    .Where(o => !o.Value.IsHidden)
+                    .Select(o => o.Value.Name);
+                if (visibleObjects.Any())
+                {
+                    await AddMessage($"You can see: {string.Join(", ", visibleObjects)}");
+                }
+            }
+            else
+            {
+                // Get everything after the look word
+                string objName = string.Join(" ", words.Skip(1));
+                // First check inventory
+                var inventoryItem = inventory.FirstOrDefault(item => 
+                    item.Name.ToLower().Contains(objName) || objName.Contains(item.Name.ToLower()));
+                if (inventoryItem != null)
+                {
+                    if (!string.IsNullOrEmpty(inventoryItem.ImageUrl))
+                    {
+                        await SetImage(inventoryItem.ImageUrl);
+                    }
+                    await AddMessage($"You examine the {inventoryItem.Name} in your possession. {inventoryItem.Description}");
+                }
+                // Then check room
+                else
+                {
+                    var roomObj = rooms[currentRoom].Objects
+                        .FirstOrDefault(o => 
+                            o.Key.Contains(objName) || objName.Contains(o.Key));
+                    if (!roomObj.Equals(default) && !roomObj.Value.IsHidden)
+                    {
+                        if (!string.IsNullOrEmpty(roomObj.Value.ImageUrl))
+                        {
+                            await SetImage(roomObj.Value.ImageUrl);
+                        }
+                        await AddMessage(roomObj.Value.Description);
+                        await Task.Delay(roomObj.Value.Description.Length * 10 + 100);  // Wait for description to finish
+                        await RevealHiddenObjects(roomObj.Key);
+                    }
+                    else
+                    {
+                        await AddMessage("You don't see that here.", "error");
+                    }
+                }
+            }
+            InputValue = "";
+            return;
+        }
+
+        // Check for taking/getting
+        if (takeWords.Any(w => input.StartsWith(w)))
+        {
+            if (words.Length > 1)
+            {
+                string objName = string.Join(" ", words.Skip(1));
+                var roomObj = rooms[currentRoom].Objects
+                    .FirstOrDefault(o => 
+                        o.Key.Contains(objName) || objName.Contains(o.Key));
+                if (!roomObj.Equals(default) && !roomObj.Value.IsHidden)
+                {
+                    if (roomObj.Value.CanTake)
+                    {
+                        inventory.Add(roomObj.Value);
+                        rooms[currentRoom].Objects.Remove(roomObj.Key);
+                        await AddMessage($"You take the {roomObj.Value.Name}.");
+                        await SaveGameState();  // Save after taking items
+                    }
+                    else
+                    {
+                        await AddMessage($"You cannot take the {roomObj.Value.Name}.", "error");
+                    }
+                }
+                else
+                {
+                    await AddMessage("You don't see that here.", "error");
+                }
+            }
+            InputValue = "";
+            return;
+        }
+
+        // Check for inventory
+        if (input.Contains("inventory") || input.Contains("items") || input.Contains("carrying"))
+        {
+            if (!inventory.Any())
+                await AddMessage("Your inventory is empty.");
+            else
+                await AddMessage($"You are carrying: {string.Join(", ", inventory.Select(i => i.Name))}");
+            InputValue = "";
+            return;
+        }
+
+        // Check for opening/unlocking
+        if (openWords.Any(w => input.StartsWith(w)) || 
+            (useWords.Any(w => input.Contains(w)) && input.Contains("cabinet")))
+        {
+            string objName = words.Length > 1 ? string.Join(" ", words.Skip(1)) : "";
+            
+            if (objName.Contains("cabinet") || input.Contains("cabinet"))
+            {
+                if (currentRoom != "dojo")
+                {
+                    await AddMessage("There is no cabinet here.", "error");
+                }
+                else
+                {
+                    var hasKatana = inventory.Any(i => i.Name.ToLower() == "katana");
+                    var hasKey = inventory.Any(i => i.Name.ToLower() == "brass key");
+
+                    if (hasKey)
+                    {
+                        await AddMessage("You use the brass key to unlock the cabinet. Inside, you find ancient scrolls of wisdom!");
+                        // Could add a new item to the room here
+                    }
+                    else if (hasKatana)
+                    {
+                        await AddMessage("You use the katana to carefully pry open the cabinet. Inside, you find ancient scrolls of wisdom!");
+                        // Could add a new item to the room here
+                    }
+                    else
+                    {
+                        await AddMessage("The cabinet is locked. You need something to open it.", "error");
+                    }
+                }
+            }
+            else
+            {
+                await AddMessage("What would you like to open?", "error");
+            }
+            InputValue = "";
+            return;
+        }
+
+        await AddMessage("Your actions do not follow the way of the warrior.", "error");
         InputValue = "";
     }
 
-    private int GetNextRoom(string direction)
+    private async Task RevealHiddenObjects(string containerName)
     {
-        int nextRoom = -1;
+        var hiddenObjects = rooms[currentRoom].Objects
+            .Where(o => o.Value.IsHidden)
+            .ToList();
 
-        for (int i = 0; i < rooms.Length; i++)
+        foreach (var obj in hiddenObjects)
         {
-            if (rooms[i][1] == direction && i + 1 != currentRoom)
+            if ((containerName == "pond" && obj.Key == "coin") ||
+                (containerName == "dummies" && obj.Key == "key"))
             {
-                nextRoom = i + 1;
-                break;
+                rooms[currentRoom].Objects[obj.Key].IsHidden = false;
+                await AddMessage($"You notice a {obj.Key}!");
             }
         }
-
-        return nextRoom;
     }
 
-    protected override void OnInitialized()
+    private async Task RestartGame()
     {
-        output = rooms[currentRoom - 1][0];
+        currentRoom = "garden";
+        hasKey = false;
+        inventory.Clear();
+        messageHistory.Clear();
 
-        InputValue = "";
+        // Reset all rooms to their initial state
+        rooms = InitializeRooms();  // You'll need to move the room initialization to a separate method
 
+        await SetImage(rooms[currentRoom].ImageUrl);
+        await AddMessage("Game restarted. " + rooms[currentRoom].Description);
+        
+        // Clear saved game state
+        await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", "samuraiPath_gameState");
+    }
+
+    // Add a method to initialize rooms with their default state
+    private Dictionary<string, Room> InitializeRooms()
+    {
+        return new Dictionary<string, Room>
+        {
+            // Move your existing rooms dictionary initialization here
+            ["garden"] = new Room
+            {
+                // ... existing garden room initialization ...
+            },
+            // ... other rooms ...
+        };
+    }
+
+    // Add a class to represent the game state
+    private class GameState
+    {
+        public string CurrentRoom { get; set; }
+        public List<RoomObject> Inventory { get; set; }
+        public Dictionary<string, Dictionary<string, RoomObject>> RoomObjects { get; set; }
+        public DateTime LastSaved { get; set; }
+    }
+
+    // Add methods to save and load game state
+    private async Task SaveGameState()
+    {
+        var gameState = new GameState
+        {
+            CurrentRoom = currentRoom,
+            Inventory = inventory,
+            RoomObjects = rooms.ToDictionary(
+                r => r.Key,
+                r => r.Value.Objects
+            ),
+            LastSaved = DateTime.Now
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(gameState);
+        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", "samuraiPath_gameState", json);
+    }
+
+    private async Task LoadGameState()
+    {
+        try
+        {
+            var json = await _jsRuntime.InvokeAsync<string>("localStorage.getItem", "samuraiPath_gameState");
+            if (!string.IsNullOrEmpty(json))
+            {
+                var gameState = System.Text.Json.JsonSerializer.Deserialize<GameState>(json);
+                
+                // Restore the game state
+                currentRoom = gameState.CurrentRoom;
+                inventory = gameState.Inventory;
+                
+                // Restore room objects
+                foreach (var roomState in gameState.RoomObjects)
+                {
+                    if (rooms.ContainsKey(roomState.Key))
+                    {
+                        rooms[roomState.Key].Objects = roomState.Value;
+                    }
+                }
+
+                await SetImage(rooms[currentRoom].ImageUrl);
+                await AddMessage($"Welcome back! You are in {currentRoom}.\n{rooms[currentRoom].Description}");
+            }
+            else
+            {
+                // Initialize a fresh game
+                currentRoom = "garden";
+                inventory = new List<RoomObject>();
+                await SetImage(rooms[currentRoom].ImageUrl);
+                await AddMessage($"Welcome to Samurai's Path!\n{rooms[currentRoom].Description}");
+                
+                // Show visible objects in starting room
+                var visibleObjects = rooms[currentRoom].Objects
+                    .Where(o => !o.Value.IsHidden)
+                    .Select(o => o.Value.Name);
+                if (visibleObjects.Any())
+                {
+                    await Task.Delay(rooms[currentRoom].Description.Length * 10 + 100); // Wait for description to finish
+                    await AddMessage($"You can see: {string.Join(", ", visibleObjects)}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log the error and start fresh
+            Console.WriteLine($"Error loading game state: {ex.Message}");
+            currentRoom = "garden";
+            inventory = new List<RoomObject>();
+            await SetImage(rooms[currentRoom].ImageUrl);
+            await AddMessage($"Welcome to Samurai's Path!\n{rooms[currentRoom].Description}");
+        }
+    }
+
+    // Update OnInitializedAsync to load the saved state
+    protected override async Task OnInitializedAsync()
+    {
         _jsRuntime = JsRuntime;
-
-        base.OnInitialized();
+        await LoadGameState();
     }
 
     protected override bool ShouldRender()
@@ -143,10 +602,41 @@
     {
         if (firstRender)
         {
+            await _jsRuntime.InvokeVoidAsync("playBackgroundMusic", 0.3);
             var inputElement = await _jsRuntime.InvokeAsync<IJSObjectReference>("document.querySelector", new Object?[] { "input" });
             await inputElement.InvokeVoidAsync("focus");
         }
         await base.OnAfterRenderAsync(firstRender);
     }
 
+    private async Task AddMessage(string text, string type = "system")
+    {
+        var message = new Message { Text = text, Type = type };
+        messageHistory.Add(message);
+        StateHasChanged();
+        
+        // Wait for the UI to update
+        await Task.Delay(50);
+        
+        // Start the typewriter effect
+        await _jsRuntime.InvokeVoidAsync("typeWriter", message.Id, text, 10); // 10ms per character
+        
+        // Scroll after typing is complete
+        await Task.Delay(text.Length * 10 + 50); // Wait for typing to finish
+        await _jsRuntime.InvokeVoidAsync("scrollToBottom", "output-window");
+    }
+
+    private async Task ToggleMusic()
+    {
+        await _jsRuntime.InvokeVoidAsync("toggleBackgroundMusic");
+    }
+
+    // Add this method to handle image loading
+    private async Task HandleImageLoad()
+    {
+        // Small delay to ensure CSS transition works
+        await Task.Delay(50);
+        isNewImage = true;
+        StateHasChanged();
+    }
 }

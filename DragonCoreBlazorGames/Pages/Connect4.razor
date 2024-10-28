@@ -1,127 +1,476 @@
 ﻿@page "/connect4"
+@inject IJSRuntime JSRuntime
 
-<h3>Connect 4</h3>
+<div class="game-title">
+    <i class="fas fa-grip-vertical"></i>
+    <h1>Connect 4</h1>
+</div>
+
+<audio id="dropSound" preload="auto">
+    <source src="sounds/drop.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <button @onclick="NewGame" class="new-game-btn">New Game</button>
+        <div class="player-info @(currentPlayer == 1 ? "active" : "")">
+            <img src="/images/X.png" class="player-icon" />
+            <span class="player-score">@playerCounts[0]</span>
+        </div>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "")">
+            <img src="/images/O.png" class="player-icon" />
+            <span class="player-score">@playerCounts[1]</span>
+        </div>
+    </div>
+
+    @if (gameover)
+    {
+        <div class="game-over-message">
+            @if (winner > 0)
+            {
+                <h2>Player @winner Wins!</h2>
+                <img src="/images/@(winner==1? "X" : "O").png" class="winner-icon" />
+            }
+            else
+            {
+                <h2>Game Draw!</h2>
+            }
+            <button @onclick="NewGame" class="play-again-btn">Play Again</button>
+        </div>
+    }
+
+    <div class="board-container">
+        <div class="column-hints">
+            @for (int col = 0; col < 7; col++)
+            {
+                int currentCol = col;
+                <div class="hint-cell @(IsValidMove(currentCol) ? "valid" : "invalid")"
+                     @onmouseover="() => ShowPreview(currentCol)"
+                     @onmouseout="HidePreview">
+                    ↓
+                </div>
+            }
+        </div>
+        <div class="board">
+            @for (int row = 0; row < 6; row++)
+            {
+                @for (int col = 0; col < 7; col++)
+                {
+                    var currentRow = row;
+                    var currentCol = col;
+                    <div class="cell @GetCellClass(currentRow, currentCol)"
+                         @onclick="() => OnClick(currentCol)">
+                        @if (!string.IsNullOrEmpty(images[currentCol, currentRow]))
+                        {
+                            <img src="@images[currentCol, currentRow]" 
+                                 class="@(IsWinningCell(currentCol, currentRow) ? "winning-piece" : "")" />
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    @* Add this after the game-over overlay but before the closing game-container div *@
+    <div class="leaderboard">
+        <h2>Top Wins</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Play to make history!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Pieces Left</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>
+                                <img src="/images/@(entry.Winner == 1 ? "X" : "O").png" 
+                                     class="leaderboard-icon" /> Player @entry.Winner
+                            </td>
+                            <td>@(21 - entry.PiecesUsed)</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
 
 <style>
-    /* Board styles */
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        font-family: 'Arial', sans-serif;
+    }
+
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 700px;
+        margin-bottom: 20px;
+    }
+
+    .player-info {
+        display: flex;
+        align-items: center;
+        padding: 10px 20px;
+        border-radius: 8px;
+        background: #f0f0f0;
+        transition: all 0.3s ease;
+    }
+
+    .player-info.active {
+        background: #4CAF50;
+        transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .player-icon {
+        width: 32px;
+        height: 32px;
+        margin-right: 10px;
+    }
+
+    .player-score {
+        font-size: 24px;
+        font-weight: bold;
+        color: #333;
+    }
+
+    .board-container {
+        position: relative;
+        margin-top: 120px;  /* Add space for the overlay */
+    }
+
+    .column-hints {
+        display: flex;
+        width: 700px;
+        margin-bottom: 5px;
+    }
+
+    .hint-cell {
+        width: 100px;
+        height: 30px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 24px;
+        color: #4CAF50;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .hint-cell.valid:hover {
+        opacity: 1;
+        animation: bounce 1s infinite;
+    }
+
+    .hint-cell.invalid {
+        color: #ff0000;
+    }
+
     .board {
         display: flex;
         flex-wrap: wrap;
         width: 700px;
         height: 600px;
-        background-color: blue;
+        background: linear-gradient(135deg, #2196F3, #1976D2);
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
     }
 
-    /* Cell styles */
     .cell {
         box-sizing: border-box;
-        width: 100px;
-        height: 100px;
-        border: 1px solid black;
+        width: calc(100% / 7);
+        height: calc(100% / 6);
+        padding: 5px;
+        position: relative;
+    }
+
+    .cell::before {
+        content: '';
+        position: absolute;
+        top: 5%;
+        left: 5%;
+        width: 90%;
+        height: 90%;
         background-color: white;
-    }
-
-        .cell img {
-            max-width: 100px;
-            max-height: 100px;
-        }
-    /* Piece styles */
-    .piece {
-        box-sizing: border-box;
-        width: calc(100% / 7 * 0.8);
-        height: calc(100% / 6 * 0.8);
         border-radius: 50%;
-        margin: auto;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
     }
 
-        .piece.player1 {
-            background-color: red;
-        }
+    .cell img {
+        position: relative;
+        width: 90%;
+        height: 90%;
+        object-fit: contain;
+        transform-origin: center top;
+        animation: dropPiece 0.5s ease-in;
+    }
 
-        .piece.player2 {
-            background-color: yellow;
+    .cell img.winning-piece {
+        animation: pulse 1s infinite;
+    }
+
+    .game-over-message {
+        text-align: center;
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        margin-bottom: 20px;
+        animation: slideDown 0.5s ease-out;
+    }
+
+    .winner-icon {
+        width: 64px;
+        height: 64px;
+        margin: 20px;
+        animation: spin 2s infinite;
+    }
+
+    .new-game-btn, .play-again-btn {
+        padding: 10px 20px;
+        font-size: 18px;
+        border: none;
+        border-radius: 5px;
+        background: #4CAF50;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .new-game-btn:hover, .play-again-btn:hover {
+        background: #45a049;
+        transform: scale(1.05);
+    }
+
+    @@keyframes dropPiece {
+        0% { transform: translateY(-600px); }
+        100% { transform: translateY(0); }
+    }
+
+    @@keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
+    }
+
+    @@keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+    }
+
+    @@keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @@keyframes slideIn {
+        from { transform: translateY(-100px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        text-align: center;
+        width: 100%;
+        max-width: 700px;
+    }
+
+    .leaderboard h2 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+        font-size: 24px;
+    }
+
+    .leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard th,
+    .leaderboard td {
+        padding: 12px;
+        text-align: center;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .leaderboard th {
+        background-color: #2196F3;
+        color: white;
+        font-weight: bold;
+    }
+
+    .leaderboard tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+
+    .leaderboard tr:hover {
+        background-color: #e9ecef;
+    }
+
+    .leaderboard tr:first-child {
+        font-weight: bold;
+        color: #2196F3;
+    }
+
+    .leaderboard-icon {
+        width: 24px;
+        height: 24px;
+        vertical-align: middle;
+        margin-right: 8px;
+    }
+
+    @@keyframes slideDown {
+        from { 
+            transform: translateY(-20px);
+            opacity: 0;
         }
+        to { 
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
 </style>
 
-<div class="board">
-    @for (int row = 0; row < 6; row++)
-    {
-        @foreach (var col in Enumerable.Range(0, 7))
-        {
-            <div class="cell" @onclick="() => OnClick(col)">
-                @if (!string.IsNullOrEmpty(images[col, row]))
-                {
-                    <img src="@images[col, row]" />
-                }
-            </div>
-        }
-    }
-</div>
-
-<div>Player 1 <img src="/images/X.png" style="max-height: 32px;" />: @playerCounts[0] pieces</div>
-<div>Player 2 <img src="/images/O.png" style="max-height: 32px;" />: @playerCounts[1] pieces</div>
-@if (gameover)
-{
-    <h1>Game Over</h1>
-}
-@if (winner > 0)
-{
-    <h2>Player @winner <img src="/images/@(winner==1? "X" : "O").png" style="max-height: 64px;" /> won</h2>
-}
-
 @code {
-    private int[,] board = new int[7, 6]; // Example game board
-    private string[,] images = new string[7, 6]; // Array of image URLs
+    private int[,] board = new int[7, 6];
+    private string[,] images = new string[7, 6];
     private int currentPlayer = 1;
-    private int[] playerCounts = { 0, 0 }; // Array to hold the number of pieces each player has placed
+    private int[] playerCounts = { 0, 0 };
     private bool gameover = false;
     private int winner = 0;
+    private List<(int col, int row)> winningCells = new();
+    private int? previewColumn = null;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
 
-    protected override void OnInitialized()
+    private class LeaderboardEntry
     {
-        for (int x = 0; x < 7; x++)
+        public int Winner { get; set; }
+        public int PiecesUsed { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private async Task NewGame()
+    {
+        board = new int[7, 6];
+        images = new string[7, 6];
+        currentPlayer = 1;
+        gameover = false;
+        winner = 0;
+        playerCounts = new int[2];
+        winningCells.Clear();
+        previewColumn = null;
+        leaderboard = await LoadLeaderboard();
+        StateHasChanged();
+    }
+
+    private bool IsValidMove(int column)
+    {
+        return !gameover && board[column, 0] == 0;
+    }
+
+    private void ShowPreview(int column)
+    {
+        if (IsValidMove(column))
         {
-            for (int y = 0; y < 6; y++)
-            {
-                board[x, y] = 0;
-            }
+            previewColumn = column;
+            StateHasChanged();
         }
     }
 
-    private void OnClick(int column)
+    private void HidePreview()
     {
-        if (gameover) return;
+        previewColumn = null;
+        StateHasChanged();
+    }
 
-        // Find the lowest empty cell in the column
+    private string GetCellClass(int row, int col)
+    {
+        var classes = new List<string> { "cell" };
+        
+        if (previewColumn == col && board[col, row] == 0)
+        {
+            classes.Add("preview");
+        }
+        
+        if (IsWinningCell(col, row))
+        {
+            classes.Add("winning");
+        }
+        
+        return string.Join(" ", classes);
+    }
+
+    private bool IsWinningCell(int col, int row)
+    {
+        return winningCells.Contains((col, row));
+    }
+
+    private async Task OnClick(int column)
+    {
+        if (!IsValidMove(column)) return;
+
         int row = -1;
-        for (int i = 0; i < 6; i++)
+        for (int i = 5; i >= 0; i--)
         {
             if (board[column, i] == 0)
             {
                 row = i;
-            }
-            else
-            {
                 break;
             }
         }
 
         if (row != -1)
         {
-            // Drop a piece in the lowest empty cell
             board[column, row] = currentPlayer;
-
-            // Set the image URL for the cell
             images[column, row] = (currentPlayer == 1) ? "/images/X.png" : "/images/O.png";
-
-            // Increment the player's piece count
             playerCounts[currentPlayer - 1]++;
 
-            // Check for a winning scenario
+            await PlaySound("dropSound");
+
             if (CheckForWin(column, row))
             {
                 gameover = true;
                 winner = currentPlayer;
+                await PlaySound("winSound");
+                await SaveLeaderboardEntry();  // Add this line
             }
             else if (CheckForTie())
             {
@@ -129,7 +478,6 @@
             }
             else
             {
-                // Switch to the next player
                 currentPlayer = (currentPlayer == 1) ? 2 : 1;
             }
 
@@ -139,104 +487,170 @@
 
     private bool CheckForWin(int column, int row)
     {
-        int count = 0;
-
-        // Check for a horizontal win
-        for (int i = 0; i < 7; i++)
+        // Store winning cells for highlighting
+        var tempWinningCells = new List<(int col, int row)>();
+        
+        // Check horizontal
+        for (int col = 0; col <= 3; col++)
         {
-            if (board[i, row] == currentPlayer)
+            int count = 0;
+            tempWinningCells.Clear();
+            for (int i = 0; i < 4; i++)
             {
-                count++;
-                if (count == 4)
+                if (col + i < 7 && board[col + i, row] == currentPlayer)
                 {
-                    return true;
+                    count++;
+                    tempWinningCells.Add((col + i, row));
                 }
+                else break;
             }
-            else
+            if (count == 4)
             {
-                count = 0;
+                winningCells.AddRange(tempWinningCells);
+                return true;
             }
         }
 
-        // Check for a vertical win
-        count = 0;
-        for (int i = 0; i < 6; i++)
+        // Check vertical
+        for (int r = 0; r <= 2; r++)
         {
-            if (board[column, i] == currentPlayer)
+            int count = 0;
+            tempWinningCells.Clear();
+            for (int i = 0; i < 4; i++)
             {
-                count++;
-                if (count == 4)
+                if (r + i < 6 && board[column, r + i] == currentPlayer)
                 {
-                    return true;
+                    count++;
+                    tempWinningCells.Add((column, r + i));
                 }
+                else break;
             }
-            else
+            if (count == 4)
             {
-                count = 0;
+                winningCells.AddRange(tempWinningCells);
+                return true;
             }
         }
 
-        // Check diagonal 1
-        count = 0;
-        int i1 = Math.Max(0, column - 3);
-        int j1 = Math.Max(0, row - 3);
-        while (i1 <= Math.Min(6, column + 3) && j1 <= Math.Min(5, row + 3))
+        // Check diagonal (bottom-left to top-right)
+        for (int col = 0; col <= 3; col++)
         {
-            if (board[i1, j1] == currentPlayer)
+            for (int r = 0; r <= 2; r++)
             {
-                count++;
+                int count = 0;
+                tempWinningCells.Clear();
+                for (int i = 0; i < 4; i++)
+                {
+                    if (col + i < 7 && r + i < 6 && board[col + i, r + i] == currentPlayer)
+                    {
+                        count++;
+                        tempWinningCells.Add((col + i, r + i));
+                    }
+                    else break;
+                }
                 if (count == 4)
                 {
+                    winningCells.AddRange(tempWinningCells);
                     return true;
                 }
             }
-            else
-            {
-                count = 0;
-            }
-            i1++;
-            j1++;
         }
 
-        // Check diagonal 2
-        count = 0;
-        int i2 = Math.Max(0, column - 3);
-        int j2 = Math.Min(5, row + 3);
-        while (i2 <= Math.Min(6, column + 3) && j2 >= Math.Max(0, row - 3))
+        // Check diagonal (top-left to bottom-right)
+        for (int col = 0; col <= 3; col++)
         {
-            if (board[i2, j2] == currentPlayer)
+            for (int r = 3; r < 6; r++)
             {
-                count++;
+                int count = 0;
+                tempWinningCells.Clear();
+                for (int i = 0; i < 4; i++)
+                {
+                    if (col + i < 7 && r - i >= 0 && board[col + i, r - i] == currentPlayer)
+                    {
+                        count++;
+                        tempWinningCells.Add((col + i, r - i));
+                    }
+                    else break;
+                }
                 if (count == 4)
                 {
+                    winningCells.AddRange(tempWinningCells);
                     return true;
                 }
             }
-            else
-            {
-                count = 0;
-            }
-            i2++;
-            j2--;
         }
 
-
-        // No winning scenario found
         return false;
     }
 
     private bool CheckForTie()
     {
-        for (int i = 0; i < 7; i++)
+        // Check every cell in the board
+        for (int col = 0; col < 7; col++)
         {
-            if (board[i, 5] == 0)
+            // Only need to check the top cell in each column
+            // If there's an empty space at the top, the column can still be played
+            if (board[col, 0] == 0)
             {
-                // There is at least one cell that is empty, so the game is not tied
                 return false;
             }
         }
-        // All cells are full, so the game is tied
+        // If we get here, no columns can be played
         return true;
     }
 
+    // Add leaderboard methods
+    private async Task SaveLeaderboardEntry()
+    {
+        var entry = new LeaderboardEntry
+        {
+            Winner = winner,
+            PiecesUsed = playerCounts[winner - 1],
+            Date = DateTime.Now
+        };
+
+        var existingEntries = await LoadLeaderboard();
+        existingEntries.Add(entry);
+        
+        // Sort by pieces used (fewer is better)
+        var topEntries = existingEntries
+            .OrderBy(e => e.PiecesUsed)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "connect4-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(topEntries)
+        );
+
+        leaderboard = await LoadLeaderboard();
+    }
+
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "connect4-leaderboard"
+            );
+
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
+
+    // Update OnInitialized to load the leaderboard
+    protected override async Task OnInitializedAsync()
+    {
+        leaderboard = await LoadLeaderboard();
+    }
 }

@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DragonCoreBlazorGames</title>
     <base href="/" />
     <script src="app.js"></script>
@@ -11,6 +11,7 @@
     <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
     <script type="module" src="https://cdn.jsdelivr.net/npm/@fluentui/web-components/dist/web-components.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <link rel="icon" type="image/png" href="favicon.png" />
     <link href="DragonCoreBlazorGames.styles.css" rel="stylesheet" />
@@ -36,5 +37,71 @@
     <script src="_framework/blazor.webassembly.js"></script>
     <script>navigator.serviceWorker.register('service-worker.js');</script>
 </body>
+
+<script>
+    window.playSound = (soundId) => {
+        const sound = document.getElementById(soundId);
+        if (sound) {
+            sound.currentTime = 0;
+            sound.play().catch(err => console.log('Error playing sound:', err));
+        }
+    }
+
+    window.scrollToBottom = (elementClassName) => {
+        const elements = document.getElementsByClassName(elementClassName);
+        if (elements && elements.length > 0) {
+            const element = elements[0];
+            element.scrollTop = element.scrollHeight;
+        }
+    }
+
+    window.typeWriter = (elementId, text, speed) => {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+
+        element.style.opacity = "0";
+        element.innerHTML = "";
+        element.style.opacity = "1";
+
+        let i = 0;
+        const type = () => {
+            if (i < text.length) {
+                element.innerHTML += text.charAt(i);
+                i++;
+                setTimeout(type, speed);
+            }
+        };
+        type();
+    };
+
+    window.playBackgroundMusic = (volume = 0.3) => {
+        const music = document.getElementById('bgMusic');
+        if (music) {
+            music.volume = volume;
+            music.loop = true;
+            music.play().catch(err => console.log('Error playing music:', err));
+        }
+    };
+
+    window.toggleBackgroundMusic = () => {
+        const music = document.getElementById('bgMusic');
+        const btn = document.getElementById('musicToggle');
+        if (music) {
+            if (music.paused) {
+                music.play();
+                btn.innerHTML = '<i class="fas fa-volume-up"></i>';
+            } else {
+                music.pause();
+                btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+            }
+        }
+    };
+
+    window.focusElement = (element) => {
+        if (element) {
+            element.focus();
+        }
+    };
+</script>
 
 </html>

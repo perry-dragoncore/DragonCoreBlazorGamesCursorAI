@@ -1,0 +1,347 @@
+@page "/snake"
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<link href="css/snake.css" rel="stylesheet" />
+
+<div class="game-title">
+    <i class="fas fa-worm"></i>
+    <h1>Snake</h1>
+</div>
+
+<audio id="eatSound" preload="auto">
+    <source src="sounds/eat.mp3" type="audio/mpeg">
+</audio>
+<audio id="crashSound" preload="auto">
+    <source src="sounds/crash.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <button class="game-btn" @onclick="StartNewGame">New Game</button>
+        <div class="stats-item">
+            <span class="label">Score</span>
+            <span class="value">@score</span>
+        </div>
+        <div class="stats-item">
+            <span class="label">High Score</span>
+            <span class="value">@highScore</span>
+        </div>
+    </div>
+
+    <div class="game-board" tabindex="0" @onkeydown="HandleKeyPress" @ref="gameBoard">
+        @for (int row = 0; row < boardSize; row++)
+        {
+            <div class="board-row">
+                @for (int col = 0; col < boardSize; col++)
+                {
+                    var cellType = GetCellType(row, col);
+                    <div class="board-cell @cellType"></div>
+                }
+            </div>
+        }
+        @if (gameOver)
+        {
+            <div class="game-over-overlay">
+                <h2>Game Over!</h2>
+                <p>Score: @score</p>
+                <button class="game-btn" @onclick="StartNewGame">Play Again</button>
+            </div>
+        }
+    </div>
+
+    <div class="controls-info">
+        <div class="control-group">
+            <h3>Controls</h3>
+            <div class="control-row">
+                <div class="control-key">↑</div>
+                <div class="control-key">←</div>
+                <div class="control-key">↓</div>
+                <div class="control-key">→</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="leaderboard">
+        <h2>High Scores</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Score</th>
+                        <th>Length</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>@entry.Score</td>
+                            <td>@entry.Length</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private const int boardSize = 20;
+    private List<(int Row, int Col)> snake = new();
+    private (int Row, int Col) food;
+    private (int Row, int Col) direction = (0, -1);
+    private bool gameOver = false;
+    private int score = 0;
+    private int highScore = 0;
+    private System.Threading.Timer? gameTimer;
+    private ElementReference gameBoard;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+
+    private class LeaderboardEntry
+    {
+        public int Score { get; set; }
+        public int Length { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLeaderboard();
+        // Initialize snake position
+        int middle = boardSize / 2;
+        snake.Add((middle, middle));
+        snake.Add((middle, middle + 1));
+        snake.Add((middle, middle + 2));
+        SpawnFood();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("focusElement", gameBoard);
+        }
+    }
+
+    private void StartNewGame()
+    {
+        // Clear and reinitialize snake
+        snake.Clear();
+        int middle = boardSize / 2;
+        snake.Add((middle, middle));
+        snake.Add((middle, middle + 1));
+        snake.Add((middle, middle + 2));
+
+        direction = (0, -1);
+        gameOver = false;
+        score = 0;
+        SpawnFood();
+
+        gameTimer?.Dispose();
+        gameTimer = new System.Threading.Timer(GameLoop, null, 0, 150); // Speed of the game
+    }
+
+    private string GetCellType(int row, int col)
+    {
+        // Check if snake is null or empty first
+        if (!snake.Any()) return "";
+
+        // Then check for snake head
+        if (snake[0].Row == row && snake[0].Col == col)
+            return "snake-head";
+
+        // Then check for snake body
+        if (snake.Skip(1).Any(s => s.Row == row && s.Col == col))
+            return "snake-body";
+
+        // Finally check for food
+        if (food.Row == row && food.Col == col)
+            return "food";
+
+        return "";
+    }
+
+    private async void GameLoop(object? state)
+    {
+        try
+        {
+            if (gameOver) return;
+
+            var head = snake[0];
+            var newHead = (head.Row + direction.Row, head.Col + direction.Col);
+
+            // Check for collisions
+            if (IsCollision(newHead))
+            {
+                await EndGame();
+                return;
+            }
+
+            snake.Insert(0, newHead);
+
+            // Check if food was eaten
+            if (newHead == food)
+            {
+                score += 10;
+                await PlaySound("eatSound");
+                SpawnFood();
+            }
+            else
+            {
+                snake.RemoveAt(snake.Count - 1);
+            }
+
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Component was disposed, stop the timer
+                gameTimer?.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle or log any other errors
+            Console.WriteLine($"Error in GameLoop: {ex.Message}");
+            gameTimer?.Dispose();
+        }
+    }
+
+    private bool IsCollision((int Row, int Col) pos)
+    {
+        // Check wall collision
+        if (pos.Row < 0 || pos.Row >= boardSize || pos.Col < 0 || pos.Col >= boardSize)
+            return true;
+
+        // Check self collision
+        return snake.Contains(pos);
+    }
+
+    private void SpawnFood()
+    {
+        var random = new Random();
+        do
+        {
+            food = (random.Next(boardSize), random.Next(boardSize));
+        } while (snake.Contains(food));
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        var newDirection = e.Key switch
+        {
+            "ArrowUp" when direction.Row != 1 => (-1, 0),
+            "ArrowDown" when direction.Row != -1 => (1, 0),
+            "ArrowLeft" when direction.Col != 1 => (0, -1),
+            "ArrowRight" when direction.Col != -1 => (0, 1),
+            _ => direction
+        };
+
+        if (newDirection != direction)
+        {
+            direction = newDirection;
+        }
+    }
+
+    private async Task EndGame()
+    {
+        gameOver = true;
+        await PlaySound("crashSound");
+        
+        if (score > highScore)
+        {
+            highScore = score;
+            await PlaySound("winSound");
+        }
+
+        await SaveScore();
+        gameTimer?.Dispose();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private async Task SaveScore()
+    {
+        var entry = new LeaderboardEntry
+        {
+            Score = score,
+            Length = snake.Count,
+            Date = DateTime.Now
+        };
+
+        leaderboard.Add(entry);
+        leaderboard = leaderboard
+            .OrderByDescending(e => e.Score)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await SaveLeaderboard();
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "snake-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(leaderboard)
+        );
+    }
+
+    private async Task LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "snake-leaderboard"
+            );
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                leaderboard = System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                    ?? new List<LeaderboardEntry>();
+                highScore = leaderboard.Any() ? leaderboard.Max(e => e.Score) : 0;
+            }
+        }
+        catch
+        {
+            leaderboard = new List<LeaderboardEntry>();
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            gameTimer?.Dispose();
+            gameTimer = null;
+            gameOver = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error disposing Snake game: {ex.Message}");
+        }
+    }
+}

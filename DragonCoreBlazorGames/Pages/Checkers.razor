@@ -1,128 +1,491 @@
-﻿@*@page "/checkers"
+﻿@page "/checkers"
+@inject IJSRuntime JSRuntime
 
-<style>
-    .checkers-board {
-        display: flex;
-        flex-direction: column;
-        margin: 1rem auto;
-        width: 60vmin;
-        height: 60vmin;
-        border: 2px solid black;
-    }
+<div class="game-title">
+    <i class="fas fa-crown"></i>
+    <h1>Checkers</h1>
+</div>
 
-    .checkers-row {
-        display: flex;
-        flex-direction: row;
-        width: 100%;
-        height: 12.5%;
-    }
+<audio id="moveSound" preload="auto">
+    <source src="sounds/move.mp3" type="audio/mpeg">
+</audio>
+<audio id="captureSound" preload="auto">
+    <source src="sounds/capture.mp3" type="audio/mpeg">
+</audio>
+<audio id="kingSound" preload="auto">
+    <source src="sounds/king.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
 
-    .checkers-square {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 12.5%;
-        height: 100%;
-    }
+<div class="game-container">
+    <div class="game-header">
+        <button class="new-game-btn" @onclick="NewGame">New Game</button>
+        <div class="player-info @(currentPlayer == 1 ? "active" : "")">
+            <div class="piece red"></div>
+            <span>Player 1</span>
+            <span class="piece-count">x @player1Pieces</span>
+        </div>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "")">
+            <div class="piece black"></div>
+            <span>Player 2</span>
+            <span class="piece-count">x @player2Pieces</span>
+        </div>
+    </div>
 
-        .checkers-square.white {
-            background-color: #EEE;
-        }
-
-        .checkers-square.black {
-            background-color: #333;
-        }
-
-    .checkers-piece {
-        border-radius: 50%;
-        width: 80%;
-        height: 80%;
-    }
-
-        .checkers-piece.red {
-            background-color: red;
-        }
-
-        .checkers-piece.black {
-            background-color: black;
-        }
-
-        .checkers-piece.king::after {
-            content: "\265B";
-            font-size: 2rem;
-            color: white;
-        }
-
-    .checkers-game-over {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-top: 1rem;
-    }
-
-        .checkers-game-over h2 {
-            margin-bottom: 1rem;
-        }
-
-        .checkers-game-over button {
-            padding: 0.5rem 1rem;
-            font-size: 1.2rem;
-            border: 2px solid black;
-            border-radius: 0.5rem;
-            background-color: white;
-            cursor: pointer;
-        }
-
-            .checkers-game-over button:hover {
-                background-color: #EEE;
-            }
-</style>
-
-<div class="checkers-board">
-    @for (int row = 0; row < 8; row++)
-    {
-        <div class="checkers-row">
+    <div class="board">
+        @for (int row = 0; row < 8; row++)
+        {
             @for (int col = 0; col < 8; col++)
             {
-                <div class="checkers-cell @(row % 2 == col % 2 ? "even" : "odd")">
-                    @if (Game.Board[row][col] != null)
+                var isBlackSquare = (row + col) % 2 == 1;
+                var currentRow = row;
+                var currentCol = col;
+                <div class="square @(isBlackSquare ? "black" : "white") @(IsValidMove(currentRow, currentCol) ? "valid-move" : "")"
+                     @onclick="() => HandleSquareClick(currentRow, currentCol)">
+                    @if (board[row, col] != 0)
                     {
-                        <div class="checkers-piece @(Game.Board[row][col].Player.ToString().ToLower()) @(Game.Board[row][col].IsKing ? "king" : "")"></div>
+                        <div class="piece @(board[row, col] < 0 ? "black" : "red") @(Math.Abs(board[row, col]) == 2 ? "king" : "") 
+                             @(selectedPiece?.Row == row && selectedPiece?.Col == col ? "selected" : "")">
+                            @if (Math.Abs(board[row, col]) == 2)
+                            {
+                                <span class="crown">👑</span>
+                            }
+                        </div>
                     }
                 </div>
             }
+        }
+    </div>
+
+    @if (gameOver)
+    {
+        <div class="game-over">
+            <h2>Game Over!</h2>
+            <p>Player @winner Wins!</p>
+            <button class="new-game-btn" @onclick="NewGame">Play Again</button>
         </div>
     }
+
+    <div class="leaderboard">
+        <h2>Top Winners</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Play to make history!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Pieces Left</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>
+                                <div class="piece @(entry.Winner == 1 ? "red" : "black") mini"></div>
+                                Player @entry.Winner
+                            </td>
+                            <td>@entry.PiecesLeft</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
 </div>
 
-
-@if (Game.IsOver)
-{
-    <div class="checkers-game-over">
-        <h2>Game Over</h2>
-        <p>@Game.EndMessage</p>
-        <button @onclick="ResetGame">Play Again</button>
-    </div>
-}
-@code {
-    private CheckersGame Game { get; set; }
-
-    protected override void OnInitialized()
-    {
-        Game = new CheckersGame();
-        base.OnInitialized();
+<style>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        font-family: Arial, sans-serif;
     }
 
-    private void SquareClicked(CheckersSquare square)
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 640px;
+        margin-bottom: 20px;
+    }
+
+    .board {
+        display: grid;
+        grid-template-columns: repeat(8, 80px);
+        grid-template-rows: repeat(8, 80px);
+        border: 2px solid #333;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .square {
+        width: 80px;
+        height: 80px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+    }
+
+    .square.white {
+        background-color: #f0d9b5;
+    }
+
+    .square.black {
+        background-color: #b58863;
+    }
+
+    .square.valid-move {
+        cursor: pointer;
+    }
+
+    .square.valid-move::after {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background-color: rgba(0, 255, 0, 0.3);
+        border-radius: 50%;
+        animation: pulse 1s infinite;
+    }
+
+    .piece {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .piece.red {
+        background-color: #ff4444;
+    }
+
+    .piece.black {
+        background-color: #333;
+    }
+
+    .piece.selected {
+        transform: scale(1.1);
+        box-shadow: 0 0 10px #4CAF50;
+    }
+
+    .piece.king .crown {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+    }
+
+    .piece.mini {
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 8px;
+    }
+
+    .player-info {
+        display: flex;
+        align-items: center;
+        padding: 10px 20px;
+        border-radius: 8px;
+        background: #f0f0f0;
+        transition: all 0.3s ease;
+        gap: 10px;
+    }
+
+    .player-info.active {
+        background: #4CAF50;
+        color: white;
+        transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .piece-count {
+        font-weight: bold;
+    }
+
+    .game-over {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    .new-game-btn {
+        padding: 10px 20px;
+        font-size: 16px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .new-game-btn:hover {
+        background: #45a049;
+        transform: scale(1.05);
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        width: 100%;
+        max-width: 640px;
+    }
+
+    /* Add the rest of the styles from previous games for leaderboard */
+
+    @@keyframes pulse {
+        0% { transform: scale(1); opacity: 0.6; }
+        50% { transform: scale(1.2); opacity: 0.3; }
+        100% { transform: scale(1); opacity: 0.6; }
+    }
+</style>
+
+@code {
+    private int[,] board = new int[8, 8];
+    private int currentPlayer = 1;
+    private bool gameOver = false;
+    private int winner = 0;
+    private int player1Pieces = 12;
+    private int player2Pieces = 12;
+    private (int Row, int Col)? selectedPiece;
+    private List<(int Row, int Col)> validMoves = new();
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+
+    private class LeaderboardEntry
     {
-        if (!Game.IsOver)
+        public int Winner { get; set; }
+        public int PiecesLeft { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        leaderboard = await LoadLeaderboard();
+        NewGame();
+    }
+
+    private void NewGame()
+    {
+        board = new int[8, 8];
+        currentPlayer = 1;
+        gameOver = false;
+        winner = 0;
+        player1Pieces = 12;
+        player2Pieces = 12;
+        selectedPiece = null;
+        validMoves.Clear();
+
+        // Initialize the board
+        for (int row = 0; row < 8; row++)
         {
-            Game.MovePiece(square);
+            for (int col = 0; col < 8; col++)
+            {
+                if ((row + col) % 2 == 1)
+                {
+                    if (row < 3)
+                        board[row, col] = -1; // Black pieces
+                    else if (row > 4)
+                        board[row, col] = 1;  // Red pieces
+                }
+            }
         }
     }
 
-    private void ResetGame()
+    private async Task HandleSquareClick(int row, int col)
     {
-        Game.Reset();
+        if (gameOver) return;
+
+        if (selectedPiece == null)
+        {
+            if (board[row, col] != 0 && Math.Sign(board[row, col]) == currentPlayer)
+            {
+                selectedPiece = (row, col);
+                validMoves = GetValidMoves(row, col);
+                await PlaySound("moveSound");
+            }
+        }
+        else if (validMoves.Contains((row, col)))
+        {
+            // Move the piece
+            var (fromRow, fromCol) = selectedPiece.Value;
+            bool wasCapture = Math.Abs(row - fromRow) == 2;
+            bool wasKing = Math.Abs(board[fromRow, fromCol]) == 2;
+
+            board[row, col] = board[fromRow, fromCol];
+            board[fromRow, fromCol] = 0;
+
+            // Handle captures
+            if (wasCapture)
+            {
+                int capturedRow = (fromRow + row) / 2;
+                int capturedCol = (fromCol + col) / 2;
+                if (board[capturedRow, capturedCol] < 0)
+                    player2Pieces--;
+                else
+                    player1Pieces--;
+                board[capturedRow, capturedCol] = 0;
+                await PlaySound("captureSound");
+            }
+            else
+            {
+                await PlaySound("moveSound");
+            }
+
+            // King promotion
+            if (!wasKing && ((currentPlayer == 1 && row == 0) || (currentPlayer == -1 && row == 7)))
+            {
+                board[row, col] *= 2; // Make it a king
+                await PlaySound("kingSound");
+            }
+
+            // Check for game over
+            if (player1Pieces == 0 || player2Pieces == 0)
+            {
+                gameOver = true;
+                winner = player1Pieces > 0 ? 1 : 2;
+                await PlaySound("winSound");
+                await SaveLeaderboardEntry();
+            }
+            else
+            {
+                // Switch players
+                currentPlayer *= -1;
+            }
+
+            selectedPiece = null;
+            validMoves.Clear();
+        }
+        else
+        {
+            selectedPiece = null;
+            validMoves.Clear();
+        }
     }
-}*@
+
+    private List<(int Row, int Col)> GetValidMoves(int row, int col)
+    {
+        var moves = new List<(int Row, int Col)>();
+        int piece = board[row, col];
+        bool isKing = Math.Abs(piece) == 2;
+
+        // Direction of movement (kings can move both ways)
+        var directions = isKing ? new[] { -1, 1 } : new[] { piece > 0 ? -1 : 1 };
+
+        foreach (var dRow in directions)
+        {
+            // Regular moves
+            foreach (var dCol in new[] { -1, 1 })
+            {
+                int newRow = row + dRow;
+                int newCol = col + dCol;
+
+                if (IsValidPosition(newRow, newCol) && board[newRow, newCol] == 0)
+                {
+                    moves.Add((newRow, newCol));
+                }
+
+                // Capture moves
+                if (IsValidPosition(newRow, newCol) && 
+                    Math.Sign(board[newRow, newCol]) == -Math.Sign(piece))
+                {
+                    int jumpRow = newRow + dRow;
+                    int jumpCol = newCol + dCol;
+                    if (IsValidPosition(jumpRow, jumpCol) && board[jumpRow, jumpCol] == 0)
+                    {
+                        moves.Add((jumpRow, jumpCol));
+                    }
+                }
+            }
+        }
+
+        return moves;
+    }
+
+    private bool IsValidPosition(int row, int col)
+    {
+        return row >= 0 && row < 8 && col >= 0 && col < 8;
+    }
+
+    private bool IsValidMove(int row, int col)
+    {
+        return validMoves.Contains((row, col));
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private async Task SaveLeaderboardEntry()
+    {
+        var entry = new LeaderboardEntry
+        {
+            Winner = winner,
+            PiecesLeft = winner == 1 ? player1Pieces : player2Pieces,
+            Date = DateTime.Now
+        };
+
+        var existingEntries = await LoadLeaderboard();
+        existingEntries.Add(entry);
+        
+        var topEntries = existingEntries
+            .OrderByDescending(e => e.PiecesLeft)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "checkers-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(topEntries)
+        );
+
+        leaderboard = await LoadLeaderboard();
+    }
+
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "checkers-leaderboard"
+            );
+
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
+}

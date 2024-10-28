@@ -1,55 +1,256 @@
 ﻿@page "/tictactoe"
+@inject IJSRuntime JSRuntime
 
 <style>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 500px;
+        margin-bottom: 20px;
+        gap: 20px;
+        padding: 10px;
+    }
+
+    .player-info {
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+        border-radius: 8px;
+        background: #f0f0f0;
+        transition: all 0.3s ease;
+        min-width: 100px;
+        white-space: nowrap;
+    }
+
+    .player-info.active {
+        background: #4CAF50;
+        transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        color: white;
+    }
+
+    .player-icon {
+        width: 24px;
+        height: 24px;
+        margin-right: 8px;
+    }
+
     .board {
         display: grid;
         grid-template-columns: repeat(3, 100px);
         grid-template-rows: repeat(3, 100px);
         grid-gap: 10px;
         margin-bottom: 20px;
+        background: linear-gradient(135deg, #2196F3, #1976D2);
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
     }
 
     .cell {
         display: flex;
         justify-content: center;
         align-items: center;
-        background-color: #eee;
-        border: 1px solid #ccc;
+        background-color: white;
+        border-radius: 8px;
         cursor: pointer;
+        transition: all 0.3s ease;
     }
 
-        .cell img {
-            max-width: 100px;
-            max-height: 100px;
+    .cell:hover:empty {
+        background-color: #f5f5f5;
+        transform: scale(1.05);
+    }
+
+    .cell.winning {
+        background-color: #a5d6a7;
+        animation: pulse 1s infinite;
+    }
+
+    .cell img {
+        max-width: 80%;
+        max-height: 80%;
+        animation: appear 0.3s ease-out;
+    }
+
+    .cell img.winning-piece {
+        animation: spin 2s infinite;
+    }
+
+    .new-game-btn {
+        padding: 8px 16px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .new-game-btn:hover {
+        background-color: #45a049;
+        transform: scale(1.05);
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        text-align: center;
+        width: 100%;
+        max-width: 400px;
+    }
+
+    .leaderboard h2 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+    }
+
+    .leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard th,
+    .leaderboard td {
+        padding: 12px;
+        text-align: center;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .leaderboard th {
+        background-color: #2196F3;
+        color: white;
+        font-weight: bold;
+    }
+
+    .leaderboard tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+
+    .leaderboard tr:hover {
+        background-color: #e9ecef;
+    }
+
+    .leaderboard-icon {
+        width: 20px;
+        height: 20px;
+        vertical-align: middle;
+        margin-right: 5px;
+    }
+
+    @@keyframes appear {
+        from { 
+            opacity: 0;
+            transform: scale(0.5);
         }
+        to { 
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    @@keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+
+    @@keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
 </style>
 
-<h1>Tic Tac Toe</h1>
-
-<p>It's @CurrentPlayer's turn.</p>
-
-<div class="board">
-    @for (int i = 0; i < 9; i++)
-    {
-        int index = i; // create a local copy of i for each iteration
-        <div class="cell" @onclick="() => OnCellClicked(index)">
-            @if (Board[index] != null)
-            {
-                <img src="@Board[index]" />
-            }
-        </div>
-    }
+<div class="game-title">
+    <i class="fas fa-times-circle"></i>
+    <h1>Tic Tac Toe</h1>
 </div>
 
-@if (Winner != null)
-{
-    <p>@Winner wins!</p>
-}
+<audio id="moveSound" preload="auto">
+    <source src="sounds/move.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
 
-<button @onclick="Reset">Reset</button>
+<div class="game-container">
+    <div class="game-header">
+        <button @onclick="Reset" class="new-game-btn">New Game</button>
+        <div class="player-info @(CurrentPlayer == 0 ? "active" : "")">
+            <img src="/images/X.png" class="player-icon" />
+            <span>Player 1</span>
+        </div>
+        <div class="player-info @(CurrentPlayer == 1 ? "active" : "")">
+            <img src="/images/O.png" class="player-icon" />
+            <span>Player 2</span>
+        </div>
+    </div>
 
+    <div class="board">
+        @for (int i = 0; i < 9; i++)
+        {
+            int index = i;
+            <div class="cell @(winningCells.Contains(index) ? "winning" : "")" 
+                 @onclick="() => OnCellClicked(index)">
+                @if (Board[index] != null)
+                {
+                    <img src="@Board[index]" class="@(winningCells.Contains(index) ? "winning-piece" : "")" />
+                }
+            </div>
+        }
+    </div>
 
-
+    <div class="leaderboard">
+        <h2>Top Winners</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Play to make history!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Moves</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>
+                                <img src="/images/@(entry.Winner == 0 ? "X" : "O").png" 
+                                     class="leaderboard-icon" /> Player @(entry.Winner + 1)
+                            </td>
+                            <td>@entry.Moves</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
 
 @code {
     private string[] Players = new[] { "Player 1", "Player 2" };
@@ -57,15 +258,40 @@
     private int CurrentPlayer = 0;
     private string[] Board = new string[9];
     private string Winner = null;
+    private List<int> winningCells = new();
+    private int moveCount = 0;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
 
-    private void OnCellClicked(int index)
+    private class LeaderboardEntry
+    {
+        public int Winner { get; set; }
+        public int Moves { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private async Task OnCellClicked(int index)
     {
         if (Board[index] == null && Winner == null)
         {
+            moveCount++;
             Board[index] = Symbols[CurrentPlayer];
+            await PlaySound("moveSound");
+
             if (CheckWinner(Symbols[CurrentPlayer]))
             {
                 Winner = Players[CurrentPlayer];
+                await PlaySound("winSound");
+                await SaveLeaderboardEntry();
+            }
+            else if (moveCount == 9)
+            {
+                Winner = "Draw";
             }
             else
             {
@@ -76,42 +302,86 @@
 
     private bool CheckWinner(string symbol)
     {
-        // Check rows
-        for (int i = 0; i < 9; i += 3)
+        int[][] winPatterns = new int[][]
         {
-            if (Board[i] == symbol && Board[i + 1] == symbol && Board[i + 2] == symbol)
+            new int[] {0, 1, 2}, new int[] {3, 4, 5}, new int[] {6, 7, 8}, // Rows
+            new int[] {0, 3, 6}, new int[] {1, 4, 7}, new int[] {2, 5, 8}, // Columns
+            new int[] {0, 4, 8}, new int[] {2, 4, 6} // Diagonals
+        };
+
+        foreach (var pattern in winPatterns)
+        {
+            if (Board[pattern[0]] == symbol && 
+                Board[pattern[1]] == symbol && 
+                Board[pattern[2]] == symbol)
             {
+                winningCells = pattern.ToList();
                 return true;
             }
-        }
-
-        // Check columns
-        for (int i = 0; i < 3; i++)
-        {
-            if (Board[i] == symbol && Board[i + 3] == symbol && Board[i + 6] == symbol)
-            {
-                return true;
-            }
-        }
-
-        // Check diagonals
-        if (Board[0] == symbol && Board[4] == symbol && Board[8] == symbol)
-        {
-            return true;
-        }
-
-        if (Board[2] == symbol && Board[4] == symbol && Board[6] == symbol)
-        {
-            return true;
         }
 
         return false;
     }
 
-    private void Reset()
+    private async Task SaveLeaderboardEntry()
+    {
+        var entry = new LeaderboardEntry
+        {
+            Winner = CurrentPlayer,
+            Moves = moveCount,
+            Date = DateTime.Now
+        };
+
+        var existingEntries = await LoadLeaderboard();
+        existingEntries.Add(entry);
+        
+        var topEntries = existingEntries
+            .OrderBy(e => e.Moves)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "tictactoe-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(topEntries)
+        );
+
+        leaderboard = await LoadLeaderboard();
+    }
+
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "tictactoe-leaderboard"
+            );
+
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
+
+    private async Task Reset()
     {
         CurrentPlayer = 0;
         Board = new string[9];
         Winner = null;
+        moveCount = 0;
+        winningCells.Clear();
+        leaderboard = await LoadLeaderboard();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        leaderboard = await LoadLeaderboard();
     }
 }

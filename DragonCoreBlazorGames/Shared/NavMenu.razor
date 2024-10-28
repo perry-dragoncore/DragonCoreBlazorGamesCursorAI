@@ -1,6 +1,9 @@
 ﻿<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="\">DragonCoreBlazorGames</a>
+        <a class="navbar-brand" href="\">
+            <i class="fas fa-dragon"></i>
+            Dragon Games
+        </a>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -11,61 +14,137 @@
     <nav class="flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="oi oi-home" aria-hidden="true"></span> Home
+                <i class="fas fa-home"></i> Home
+            </NavLink>
+        </div>
+        <div class="nav-category">Classic Games</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/tictactoe">
+                <i class="fas fa-times-circle"></i> Tic Tac Toe
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/tictactoe" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Tic Tac Toe
+            <NavLink class="nav-link" href="/connect4">
+                <i class="fas fa-grip-vertical"></i> Connect 4
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/tictactoe4x4" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Tic Tac Toe 4x4
+            <NavLink class="nav-link" href="/pong">
+                <i class="fas fa-table-tennis"></i> Pong
+            </NavLink>
+        </div>
+        <div class="nav-category">Puzzle Games</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/memory">
+                <i class="fas fa-clone"></i> Memory Match
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/whackadragon" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Whack a Dragon
+            <NavLink class="nav-link" href="/minesweeper">
+                <i class="fas fa-bomb"></i> Minesweeper
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/connect4" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Connect 4
+            <NavLink class="nav-link" href="/mastermind">
+                <i class="fas fa-key"></i> Mastermind
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/textadventure" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Text Adventure
+            <NavLink class="nav-link" href="/textadventure">
+                <i class="fas fa-torii-gate"></i> Samurai's Path
+            </NavLink>
+        </div>
+        <div class="nav-category">Action Games</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/whackadragon">
+                <i class="fas fa-dragon"></i> Whack a Dragon
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/memory" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Memory Match
+            <NavLink class="nav-link" href="/snake">
+                <i class="fas fa-worm"></i> Snake
+            </NavLink>
+        </div>
+        <div class="nav-category">Board Games</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/checkers">
+                <i class="fas fa-crown"></i> Checkers
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/minesweeper" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Minesweeper
+            <NavLink class="nav-link" href="/diceroller">
+                <i class="fas fa-dice"></i> Dice Roller
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/minesweeper42" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Minesweeper 42
+            <NavLink class="nav-link" href="/dotsandboxes">
+                <i class="fas fa-border-all"></i> Dots and Boxes
             </NavLink>
         </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/mastermind" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Mastermind
-            </NavLink>
-        </div>
-        @*<div class="nav-item px-3">
-            <NavLink class="nav-link" href="/checkers" Match="NavLinkMatch.All">
-                <span class="oi oi-link-intact" aria-hidden="true"></span> Checkers
-            </NavLink>
-        </div>*@
     </nav>
 </div>
+
+<style>
+    .navbar-brand {
+        font-size: 1.3rem;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .navbar-brand i {
+        font-size: 1.5rem;
+        color: #ffd700;
+    }
+
+    .nav-category {
+        padding: 10px 16px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        color: #adb5bd;
+        margin-top: 15px;
+        border-bottom: 1px solid #444;
+    }
+
+    .nav-item {
+        margin: 5px 0;
+    }
+
+    .nav-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 16px;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+    }
+
+    .nav-link i {
+        width: 20px;
+        text-align: center;
+    }
+
+    .nav-link:hover {
+        background-color: rgba(255,255,255,0.1);
+        transform: translateX(5px);
+    }
+
+    .nav-link.active {
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .nav-scrollable {
+        background: #2c3e50;
+    }
+
+    .navbar {
+        background: #1a2634;
+        border-bottom: 1px solid #34495e;
+    }
+</style>
 
 @code {
     private bool collapseNavMenu = true;

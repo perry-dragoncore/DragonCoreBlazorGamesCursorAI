@@ -1,6 +1,23 @@
 ﻿@page "/memory"
 
-<h1>Memory Matching Game</h1>
+<div class="game-title">
+    <i class="fas fa-clone"></i>
+    <h1>Memory Match</h1>
+</div>
+
+@* Add these audio elements at the top after the <h1> *@
+<audio id="flipSound" preload="auto">
+    <source src="sounds/flip.mp3" type="audio/mpeg">
+</audio>
+<audio id="matchSound" preload="auto">
+    <source src="sounds/match.mp3" type="audio/mpeg">
+</audio>
+<audio id="unmatchSound" preload="auto">
+    <source src="sounds/unmatch.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
 
 <style>
     .board {
@@ -8,29 +25,72 @@
         flex-wrap: wrap;
         margin-bottom: 20px;
         max-width: 500px;
+        perspective: 1000px;
     }
 
     .square {
         width: 100px;
         height: 100px;
-        background-color: #ddd;
         margin: 5px;
+        position: relative;
+        transform-style: preserve-3d;
+        transition: transform 0.6s;
+        cursor: pointer;
+    }
+
+    .square.flipped {
+        transform: rotateY(180deg);
+    }
+
+    .square.matched {
+        animation: matched 0.5s ease-in-out;
+    }
+
+    .square-face {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        backface-visibility: hidden;
         display: flex;
         justify-content: center;
         align-items: center;
-        cursor: pointer;
-        border: 1px solid #bbb;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        overflow: hidden;
     }
 
-        .square img {
-            max-width: 100%;
-            max-height: 100%;
-        }
+    .square-face img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
 
-        .square.removed {
+    .square-front {
+        background: linear-gradient(135deg, #6e8efb, #4a6cf7);
+        transform: rotateY(0deg);
+    }
+
+    .square-back {
+        background-color: white;
+        transform: rotateY(180deg);
+    }
+
+    .square.removed {
+        animation: fadeOut 0.5s ease-out forwards;
+    }
+
+    @@keyframes matched {
+        0% { transform: rotateY(180deg) scale(1); }
+        50% { transform: rotateY(180deg) scale(1.2); }
+        100% { transform: rotateY(180deg) scale(1); }
+    }
+
+    @@keyframes fadeOut {
+        to {
             opacity: 0.5;
-            cursor: default;
+            transform: rotateY(180deg) scale(0.95);
         }
+    }
 
     .stats {
         display: flex;
@@ -71,37 +131,163 @@
             box-shadow: 0 5px #666;
             transform: translateY(4px);
         }
+
+    .game-header {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .stats-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 5px 15px;
+    }
+
+    .stats-item .label {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 4px;
+    }
+
+    .stats-item .value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #2c3e50;
+        font-family: monospace;
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        text-align: center;
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .leaderboard h2 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+    }
+
+    .leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard th,
+    .leaderboard td {
+        padding: 12px;
+        text-align: center;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .leaderboard th {
+        background-color: #4CAF50;
+        color: white;
+        font-weight: bold;
+    }
+
+    .leaderboard tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+
+    .leaderboard tr:hover {
+        background-color: #e9ecef;
+    }
+
+    .leaderboard tr:first-child {
+        font-weight: bold;
+        color: #e74c3c;
+    }
 </style>
 
+<div class="game-container">
 
 <div class="board">
     @foreach (var square in squares)
     {
-        <div class="@($"square {square.State}")" @onclick="() => OnSquareClick(square)">
-            @if (square.State == SquareState.Hidden)
-            {
+        <div class="@($"square {GetSquareClass(square)}")" @onclick="() => OnSquareClick(square)">
+            <div class="square-face square-front">
                 <img src="@backImage" alt="Back of Card" />
-            }
-            else
-            {
+            </div>
+            <div class="square-face square-back">
                 <img src="@square.ImageUrl" alt="Card" />
-            }
+            </div>
         </div>
     }
 </div>
 
-<div class="stats">
-    <div class="matches">Matches: @matches</div>
-    <div class="timer">Time: @timeRemaining s</div>
+<div class="game-header">
+    <div class="stats-item">
+        <span class="label">Matches:</span>
+        <span class="value">@matches / @MatchesNeeded</span>
+    </div>
+    <div class="stats-item">
+        <span class="label">Time:</span>
+        <span class="value">@FormattedTime</span>
+    </div>
+    <div class="stats-item">
+        <span class="label">Clicks:</span>
+        <span class="value">@clicks</span>
+    </div>
 </div>
+
 
 @if (gameOver)
 {
-    <div class="message">Congratulations! You won in @elapsedTime seconds.</div>
+    <div class="message">Congratulations! You won in @TimeSpan.FromSeconds(elapsedSeconds).ToString(@"mm\:ss")!</div>
     <button @onclick="ResetGame">Play Again</button>
 }
 
+@* Add leaderboard after the game board *@
+<div class="leaderboard">
+    <h2>Best Scores</h2>
+    @if (!leaderboard.Any())
+    {
+        <p>No records yet. Be the first to win!</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Time</th>
+                    <th>Clicks</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < leaderboard.Count; i++)
+                {
+                    var entry = leaderboard[i];
+                    <tr>
+                        <td>#@(i + 1)</td>
+                        <td>@TimeSpan.FromSeconds(entry.Time).ToString(@"mm\:ss")</td>
+                        <td>@entry.Clicks</td>
+                        <td>@entry.Date.ToShortDateString()</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+</div>
 @code {
+    @inject IJSRuntime JSRuntime
+
     enum SquareState
     {
         Hidden,
@@ -117,7 +303,7 @@
 
     const int BoardSize = 16;
     const int MatchesNeeded = 8;
-    const int GameDurationSeconds = 60;
+    // const int GameDurationSeconds = 60;  // Remove this line
 
     readonly string backImage = "https://picsum.photos/200/200?grayscale";
     readonly string[] images =
@@ -134,15 +320,29 @@
 
     List<Square> squares = new List<Square>();
     int matches = 0;
-    int timeRemaining = GameDurationSeconds;
     bool gameOver = false;
     DateTime startTime;
     TimeSpan elapsedTime;
+    private int clicks = 0;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+    int elapsedSeconds = 0;
 
-    protected override void OnInitialized()
+    private string FormattedTime => TimeSpan.FromSeconds(elapsedSeconds).ToString(@"mm\:ss");
+
+    // Add LeaderboardEntry class
+    private class LeaderboardEntry
+    {
+        public int Time { get; set; }
+        public int Clicks { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
     {
         InitializeBoard();
         StartTimer();
+        leaderboard = await LoadLeaderboard();
     }
 
     void InitializeBoard()
@@ -166,90 +366,142 @@
         }
     }
 
+    private string GetSquareClass(Square square) => square.State switch
+    {
+        SquareState.Visible => "flipped",
+        SquareState.Removed => "flipped removed matched",
+        _ => ""
+    };
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
     async Task OnSquareClick(Square square)
     {
-        if (square.State == SquareState.Hidden)
+        if (square.State != SquareState.Hidden || gameOver)
         {
-            square.State = SquareState.Visible;
-            await Task.Delay(500); // Wait for animation to finish
-            if (squares.Count(s => s.State == SquareState.Visible) == 2)
+            return;
+        }
+
+        clicks++;
+        square.State = SquareState.Visible;
+        await PlaySound("flipSound");
+        
+        if (squares.Count(s => s.State == SquareState.Visible) == 2)
+        {
+            var visibleSquares = squares.Where(s => s.State == SquareState.Visible).ToArray();
+            await Task.Delay(500);
+
+            if (visibleSquares[0].ImageUrl == visibleSquares[1].ImageUrl)
             {
-                var visibleSquares = squares.Where(s => s.State == SquareState.Visible).ToArray();
-                if (visibleSquares[0].ImageUrl == visibleSquares[1].ImageUrl)
+                await PlaySound("matchSound");
+                visibleSquares[0].State = SquareState.Removed;
+                visibleSquares[1].State = SquareState.Removed;
+                matches++;
+                
+                if (matches == MatchesNeeded)
                 {
-                    visibleSquares[0].State = SquareState.Removed;
-                    visibleSquares[1].State = SquareState.Removed;
-                    matches++;
-                    if (matches == MatchesNeeded)
-                    {
-                        EndGame();
-                    }
+                    await PlaySound("winSound");
+                    EndGame();
+                    await SaveLeaderboardEntry();
                 }
-                else
-                {
-                    visibleSquares[0].State = SquareState.Hidden;
-                    visibleSquares[1].State = SquareState.Hidden;
-                }
+            }
+            else
+            {
+                await Task.Delay(500);
+                await PlaySound("unmatchSound");
+                visibleSquares[0].State = SquareState.Hidden;
+                visibleSquares[1].State = SquareState.Hidden;
             }
         }
     }
+
     void StartTimer()
     {
         startTime = DateTime.UtcNow;
+        elapsedSeconds = 0;  // Reset elapsed seconds
         _ = UpdateTimer();
     }
 
     async Task UpdateTimer()
     {
-        while (timeRemaining > 0 && !gameOver)
+        while (!gameOver)
         {
             await Task.Delay(1000);
-            timeRemaining = GameDurationSeconds - (int)(DateTime.UtcNow - startTime).TotalSeconds;
+            elapsedSeconds++;
             StateHasChanged();
-        }
-        if (!gameOver)
-        {
-            EndGame();
         }
     }
 
     void EndGame()
     {
-        gameOver = true;
-        elapsedTime = DateTime.UtcNow - startTime;
+        if (matches == MatchesNeeded)
+        {
+            gameOver = true;
+            elapsedTime = TimeSpan.FromSeconds(elapsedSeconds);
+        }
     }
 
     void ResetGame()
     {
         squares.Clear();
         matches = 0;
-        timeRemaining = GameDurationSeconds;
+        clicks = 0;
+        elapsedSeconds = 0;  // Reset elapsed time
         gameOver = false;
         InitializeBoard();
         StartTimer();
     }
+
+    // Add leaderboard methods
+    private async Task SaveLeaderboardEntry()
+    {
+        var entry = new LeaderboardEntry
+        {
+            Time = elapsedSeconds,
+            Clicks = clicks,
+            Date = DateTime.Now
+        };
+
+        var existingEntries = await LoadLeaderboard();
+        existingEntries.Add(entry);
+        
+        // Sort by time first, then by clicks
+        var topEntries = existingEntries
+            .OrderBy(e => e.Time)
+            .ThenBy(e => e.Clicks)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "memory-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(topEntries)
+        );
+
+        leaderboard = await LoadLeaderboard();
+    }
+
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "memory-leaderboard"
+            );
+
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
 }
-
-@*<div class="board">
-        @foreach (var square in squares)
-        {
-            <div class="square @(square.IsRemoved ? "removed" : "")" @onclick="() => HandleSquareClick(square.Id)">
-                @if (square.IsFlipped || square.IsRemoved)
-                {
-                    <img src="@square.Image" />
-                }
-            </div>
-        }
-    </div>
-
-    <div class="stats">
-        <div class="matches">Matches: @matches / 8</div>
-        <div class="attempts">Attempts: @attempts</div>
-        <div class="time">Time: @timeElapsed s</div>
-        @if (matches == 8)
-        {
-            <div class="message">Congratulations! You completed the game in @timeElapsed seconds.</div>
-            <button @onclick="Reset">New Game</button>
-        }
-    </div>*@
-

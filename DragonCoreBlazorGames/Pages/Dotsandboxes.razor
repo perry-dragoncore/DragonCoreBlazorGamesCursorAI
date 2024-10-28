@@ -1,0 +1,297 @@
+@page "/dotsandboxes"
+@inject IJSRuntime JSRuntime
+<link href="css/dotsandboxes.css" rel="stylesheet" />
+
+<div class="game-title">
+    <i class="fas fa-border-all"></i>
+    <h1>Dots and Boxes</h1>
+</div>
+
+<div class="game-container">
+    <div class="game-header">
+        <button class="game-btn" @onclick="RestartGame">New Game</button>
+        <div class="player-info @(currentPlayer == 1 ? "active" : "")" style="--player-color: #4CAF50;">
+            <span class="player-label">Player 1 (Green)</span>
+            <span class="player-score">@player1Score</span>
+        </div>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "")" style="--player-color: #f44336;">
+            <span class="player-label">Player 2 (Red)</span>
+            <span class="player-score">@player2Score</span>
+        </div>
+    </div>
+
+    <div class="game-board">
+        @for (int row = 0; row < boardSize; row++)
+        {
+            <div class="board-row">
+                @for (int col = 0; col < boardSize; col++)
+                {
+                    int r = row;
+                    int c = col;
+                    <div class="dot"></div>
+
+                    @if (col < boardSize - 1)
+                    {
+                        <div class="horizontal-line @(horizontalLines[row,col] == 1 ? "player1" : horizontalLines[row,col] == 2 ? "player2" : "")"
+                             @onclick="() => PlaceHorizontalLine(r, c)"></div>
+                    }
+                }
+            </div>
+
+            @if (row < boardSize - 1)
+            {
+                <div class="line-row">
+                    @for (int col = 0; col < boardSize; col++)
+                    {
+                        int r = row;
+                        int c = col;
+                        @if (col == 0)
+                        {
+                            <div class="vertical-line @(verticalLines[row,col] == 1 ? "player1" : verticalLines[row,col] == 2 ? "player2" : "")"
+                                 @onclick="() => PlaceVerticalLine(r, c)"></div>
+                        }
+
+                        @if (col < boardSize - 1)
+                        {
+                            <div class="box @(boxes[row,col] == 1 ? "player1" : boxes[row,col] == 2 ? "player2" : "")"></div>
+                            <div class="vertical-line @(verticalLines[row,col+1] == 1 ? "player1" : verticalLines[row,col+1] == 2 ? "player2" : "")"
+                                 @onclick="() => PlaceVerticalLine(r, c+1)"></div>
+                        }
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (gameOver)
+    {
+        <div class="game-over">
+            @if (player1Score > player2Score)
+            {
+                <h2>Player 1 Wins!</h2>
+            }
+            else if (player2Score > player1Score)
+            {
+                <h2>Player 2 Wins!</h2>
+            }
+            else
+            {
+                <h2>It's a Tie!</h2>
+            }
+            <button class="restart-btn" @onclick="RestartGame">Play Again</button>
+        </div>
+    }
+
+    <div class="leaderboard">
+        <h2>Top Scores</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Score</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>
+                                <span class="winner-indicator" 
+                                      style="background-color: @(entry.Winner == 1 ? "#4CAF50" : "#f44336")">
+                                </span>
+                                Player @entry.Winner
+                            </td>
+                            <td>@entry.Score</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private const int boardSize = 6;
+    // Initialize arrays when declaring them
+    private int[,] horizontalLines = new int[boardSize, boardSize - 1];
+    private int[,] verticalLines = new int[boardSize - 1, boardSize];
+    private int[,] boxes = new int[boardSize - 1, boardSize - 1];
+    private int currentPlayer = 1;
+    private int player1Score = 0;
+    private int player2Score = 0;
+    private bool gameOver = false;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLeaderboard();
+        InitializeGame();
+    }
+
+    private void InitializeGame()
+    {
+        // Reset arrays instead of creating new ones
+        Array.Clear(horizontalLines, 0, horizontalLines.Length);
+        Array.Clear(verticalLines, 0, verticalLines.Length);
+        Array.Clear(boxes, 0, boxes.Length);
+        currentPlayer = 1;
+        player1Score = 0;
+        player2Score = 0;
+        gameOver = false;
+    }
+
+    private void PlaceHorizontalLine(int row, int col)
+    {
+        if (horizontalLines[row, col] > 0 || gameOver) return;
+
+        horizontalLines[row, col] = currentPlayer;
+        bool boxCompleted = CheckBoxCompletion();
+
+        if (!boxCompleted)
+        {
+            currentPlayer = currentPlayer == 1 ? 2 : 1;
+        }
+
+        CheckGameOver();
+    }
+
+    private void PlaceVerticalLine(int row, int col)
+    {
+        if (verticalLines[row, col] > 0 || gameOver) return;
+
+        verticalLines[row, col] = currentPlayer;
+        bool boxCompleted = CheckBoxCompletion();
+
+        if (!boxCompleted)
+        {
+            currentPlayer = currentPlayer == 1 ? 2 : 1;
+        }
+
+        CheckGameOver();
+    }
+
+    private bool CheckBoxCompletion()
+    {
+        bool boxCompleted = false;
+
+        for (int row = 0; row < boardSize - 1; row++)
+        {
+            for (int col = 0; col < boardSize - 1; col++)
+            {
+                if (boxes[row, col] == 0 &&
+                    horizontalLines[row, col] > 0 &&
+                    horizontalLines[row + 1, col] > 0 &&
+                    verticalLines[row, col] > 0 &&
+                    verticalLines[row, col + 1] > 0)
+                {
+                    boxes[row, col] = currentPlayer;
+                    if (currentPlayer == 1)
+                        player1Score++;
+                    else
+                        player2Score++;
+                    boxCompleted = true;
+                }
+            }
+        }
+
+        return boxCompleted;
+    }
+
+    private async Task CheckGameOver()
+    {
+        gameOver = true;
+        for (int row = 0; row < boardSize - 1; row++)
+        {
+            for (int col = 0; col < boardSize - 1; col++)
+            {
+                if (boxes[row, col] == 0)
+                {
+                    gameOver = false;
+                    return;
+                }
+            }
+        }
+
+        if (gameOver)
+        {
+            await SaveLeaderboardEntry();
+        }
+    }
+
+    private async Task RestartGame()
+    {
+        InitializeGame();
+    }
+
+    private class LeaderboardEntry
+    {
+        public int Winner { get; set; }
+        public int Score { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private async Task SaveLeaderboardEntry()
+    {
+        if (!gameOver) return;
+
+        var winner = player1Score > player2Score ? 1 : 2;
+        var winningScore = Math.Max(player1Score, player2Score);
+
+        var entry = new LeaderboardEntry
+        {
+            Winner = winner,
+            Score = winningScore,
+            Date = DateTime.Now
+        };
+
+        leaderboard.Add(entry);
+        leaderboard = leaderboard
+            .OrderByDescending(e => e.Score)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await SaveLeaderboard();
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "dotsandboxes-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(leaderboard)
+        );
+    }
+
+    private async Task LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "dotsandboxes-leaderboard"
+            );
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                leaderboard = System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                    ?? new List<LeaderboardEntry>();
+            }
+        }
+        catch
+        {
+            leaderboard = new List<LeaderboardEntry>();
+        }
+    }
+}

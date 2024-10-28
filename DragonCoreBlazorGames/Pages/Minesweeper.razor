@@ -1,14 +1,44 @@
 ﻿@page "/minesweeper"
 @using System
+@using System.Timers
 
 @using System.Text.RegularExpressions
 
-<h1>Minesweeper</h1>
+@inject IJSRuntime JSRuntime
+
+<div class="game-title">
+    <i class="fas fa-bomb"></i>
+    <h1>Minesweeper</h1>
+</div>
+
+<audio id="clickSound" preload="auto">
+    <source src="sounds/click.mp3" type="audio/mpeg">
+</audio>
+<audio id="explosionSound" preload="auto">
+    <source src="sounds/explosion.mp3" type="audio/mpeg">
+</audio>
+<audio id="flagSound" preload="auto">
+    <source src="sounds/flag.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
+
+@* Add this after the <h1> but before the game container *@
+<div class="game-options">
+    <label>Board Size:</label>
+    <select @onchange="@(e => ChangeBoardSize(e.Value.ToString()))" value="@currentSize">
+        <option value="10">10x10 (10 mines)</option>
+        <option value="20">20x20 (40 mines)</option>
+        <option value="30">30x30 (90 mines)</option>
+    </select>
+</div>
 
 <div class="game-container">
     <div class="game-header">
         <button @onclick="NewGame">New Game</button>
         <span class="mines-left">@MinesLeft</span> Mines Left
+        <span class="timer">@FormattedTime</span>
         <span class="game-state">@GameStateString</span>
     </div>
     <div class="game-board">
@@ -22,15 +52,45 @@
                     var revealed = CellRevealed[r, c];
                     var cell = CellContents[r, c];
                     var flagged = CellFlagged[r, c];
-                    <div class="game-cell @(revealed ? "revealed" : "hidden")"
+                    <div class="game-cell @(revealed ? "revealed" : "hidden") @(revealed && CellMined[r, c] ? "mine-exploded" : "") @(flagged ? "flagged" : "") revealed-@(cell)"
                          @onclick="@(() => ClickCell(r, c))"
-                         @oncontextmenu="@((e) => { FlagCell(r, c); })"
+                         @oncontextmenu="@((e) => FlagCell(r, c))"
                          @onclick:preventDefault
                          @oncontextmenu:preventDefault>
-                        @(flagged ? "F" : cell) 
+                        @(flagged ? "🚩" : cell)
                     </div>
                 }
             </div>
+        }
+    </div>
+    <div class="leaderboard">
+        <h2>Best Times for @currentSize x @currentSize Board</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first to win!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Time</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>@TimeSpan.FromSeconds(entry.Time).ToString(@"mm\:ss")</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         }
     </div>
 </div>
@@ -42,13 +102,16 @@
         align-items: center;
         font-family: Arial, sans-serif;
         margin: 20px;
+        width: 100%;
+        max-width: 95vw;
     }
 
     .game-header {
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
+        gap: 20px;
     }
 
     .game-board {
@@ -56,6 +119,10 @@
         display: flex;
         flex-direction: column;
         padding: 5px;
+        overflow: auto;
+        max-height: 80vh;
+        width: @(ContainerSize);
+        margin: 0 auto;
     }
 
     .game-row {
@@ -63,88 +130,275 @@
     }
 
     .game-cell {
-        width: 25px;
-        height: 25px;
+        width: @(CellSize);
+        height: @(CellSize);
         border: 1px solid #ccc;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
+        font-size: calc(@(CellSize) * 0.6);  /* Adjust font size relative to cell size */
         font-weight: bold;
         user-select: none;
+        background-color: #c0c0c0;
+        transition: all 0.2s ease-in-out;
+        cursor: pointer;
+        box-shadow: inset -2px -2px #808080, inset 2px 2px #fff;
     }
+
+        .game-cell:hover:not(.revealed) {
+            background-color: #d0d0d0;
+            transform: scale(1.1);
+        }
 
         .game-cell.revealed {
             background-color: #eee;
+            box-shadow: none;
+            border: 1px solid #999;
+            animation: reveal 0.3s ease-out;
         }
 
-        .game-cell.revealed-0 {
-            color: #fff;
-        }
-
-        .game-cell.revealed-1 {
-            color: blue;
-        }
-
-        .game-cell.revealed-2 {
-            color: green;
-        }
-
-        .game-cell.revealed-3 {
-            color: red;
-        }
-
-        .game-cell.revealed-4 {
-            color: darkblue;
-        }
-
-        .game-cell.revealed-5 {
-            color: brown;
-        }
-
-        .game-cell.revealed-6 {
-            color: cyan;
-        }
-
-        .game-cell.revealed-7 {
-            color: black;
-        }
-
-        .game-cell.revealed-8 {
-            color: gray;
+        .game-cell.mine-exploded {
+            background-color: #ff0000;
+            animation: explode 0.5s ease-out;
         }
 
         .game-cell.flagged {
-            color: red;
+            color: #ff0000;
+            animation: flag 0.3s ease-out;
         }
 
     .mines-left {
-        font-weight: bold;
-        margin-right: 10px;
+        font-size: 18px;
+        color: #e74c3c;
+        padding: 5px 10px;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
     .game-state {
-        font-weight: bold;
-        margin-left: 10px;
+        font-size: 18px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        animation: fadeIn 0.5s ease-out;
     }
 
-        .game-state.lost {
-            color: red;
+@@keyframes reveal {
+    0% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@@keyframes explode {
+    0% {
+        transform: scale(1);
+        background-color: #ff0000;
+    }
+    50% {
+        transform: scale(1.2);
+        background-color: #ff4444;
+    }
+    100% {
+        transform: scale(1);
+        background-color: #ff0000;
+    }
+}
+
+@@keyframes flag {
+    0% {
+        transform: scale(0.8) rotate(-15deg);
+    }
+    50% {
+        transform: scale(1.1) rotate(15deg);
+    }
+    100% {
+        transform: scale(1) rotate(0deg);
+    }
+}
+
+    .game-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+        gap: 20px;
+    }
+
+        .game-header button {
+            padding: 8px 16px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
         }
 
-        .game-state.won {
-            color: green;
-        }
+            .game-header button:hover {
+                background-color: #45a049;
+            }
+
+    .mines-left {
+        font-size: 18px;
+        color: #e74c3c;
+        padding: 5px 10px;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .game-state {
+        font-size: 18px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        animation: fadeIn 0.5s ease-out;
+    }
+
+@@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+    .game-options {
+        margin-bottom: 20px;
+        text-align: center;
+    }
+
+    .game-options select {
+        margin-left: 10px;
+        padding: 5px;
+        font-size: 16px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+    }
+
+    .game-options label {
+        font-size: 16px;
+        margin-right: 10px;
+    }
+
+    .game-cell.revealed-1 {
+        color: blue;
+    }
+    .game-cell.revealed-2 {
+        color: green;
+    }
+    .game-cell.revealed-3 {
+        color: red;
+    }
+    .game-cell.revealed-4 {
+        color: darkblue;
+    }
+    .game-cell.revealed-5 {
+        color: brown;
+    }
+    .game-cell.revealed-6 {
+        color: cyan;
+    }
+    .game-cell.revealed-7 {
+        color: black;
+    }
+    .game-cell.revealed-8 {
+        color: gray;
+    }
+
+    .timer {
+        font-size: 18px;
+        color: #2c3e50;
+        padding: 5px 10px;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        font-family: monospace;
+        min-width: 60px;
+        text-align: center;
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        text-align: center;
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .leaderboard h2 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+    }
+
+    .leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard th,
+    .leaderboard td {
+        padding: 12px;
+        text-align: center;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .leaderboard th {
+        background-color: #4CAF50;
+        color: white;
+        font-weight: bold;
+    }
+
+    .leaderboard tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+
+    .leaderboard tr:hover {
+        background-color: #e9ecef;
+    }
+
+    .leaderboard tr:first-child {
+        font-weight: bold;
+        color: #e74c3c;
+    }
 </style>
 @code {
-    private const int Rows = 10;
-    private const int Cols = 10;
-    private const int Mines = 10;
-    private string[,] CellContents = new string[Rows, Cols];
-    private bool[,] CellRevealed = new bool[Rows, Cols];
-    private bool[,] CellFlagged = new bool[Rows, Cols];
-    private bool[,] CellMined = new bool[Rows, Cols];
-    private int[,] NeighborMineCounts = new int[Rows, Cols];
+    private int currentSize = 10;
+    private int Rows => currentSize;
+    private int Cols => currentSize;
+    private int Mines => currentSize switch
+    {
+        10 => 10,
+        20 => 40,
+        30 => 90,
+        _ => 10
+    };
+
+    private string[,] CellContents;
+    private bool[,] CellRevealed;
+    private bool[,] CellFlagged;
+    private bool[,] CellMined;
+    private int[,] NeighborMineCounts;
+
+    private void InitializeArrays()
+    {
+        CellContents = new string[Rows, Cols];
+        CellRevealed = new bool[Rows, Cols];
+        CellFlagged = new bool[Rows, Cols];
+        CellMined = new bool[Rows, Cols];
+        NeighborMineCounts = new int[Rows, Cols];
+    }
 
     private int MinesLeft => Mines - CountFlagged();
     private bool GameLost { get; set; }
@@ -171,20 +425,47 @@
         }
     }
 
+    private Timer? gameTimer;
+    private int elapsedSeconds = 0;
+    private bool gameStarted = false;
+
+    private string FormattedTime => TimeSpan.FromSeconds(elapsedSeconds).ToString(@"mm\:ss");
+
+    private void StartTimer()
+    {
+        if (gameTimer == null)
+        {
+            gameTimer = new Timer(1000);
+            gameTimer.Elapsed += (sender, e) =>
+            {
+                elapsedSeconds++;
+                InvokeAsync(StateHasChanged);
+            };
+            gameTimer.Start();
+        }
+    }
+
+    private void StopTimer()
+    {
+        if (gameTimer != null)
+        {
+            gameTimer.Stop();
+            gameTimer.Dispose();
+            gameTimer = null;
+        }
+    }
+
     private void NewGame()
     {
+        StopTimer();
+        gameStarted = false;
+        elapsedSeconds = 0;
+        // Reset game state flags
+        GameLost = false;
+        GameWon = false;
+
         // Reset game state
-        for (int row = 0; row < Rows; row++)
-        {
-            for (int col = 0; col < Cols; col++)
-            {
-                CellContents[row, col] = "";
-                CellRevealed[row, col] = false;
-                CellFlagged[row, col] = false;
-                CellMined[row, col] = false;
-                NeighborMineCounts[row, col] = 0;
-            }
-        }
+        InitializeArrays();
 
         // Plant mines
         Random rand = new Random();
@@ -239,61 +520,52 @@
         return count;
     }
 
-
-    private void ClickCell(int row, int col)
+    private async Task ClickCell(int row, int col)
     {
-        if (GameLost || GameWon)
+        if (GameLost || GameWon || CellFlagged[row, col])
         {
             return;
+        }
+
+        if (!gameStarted)
+        {
+            gameStarted = true;
+            StartTimer();
         }
 
         if (CellMined[row, col])
         {
             CellRevealed[row, col] = true;
-            RevealMines();
+            CellContents[row, col] = "💣";
+            await PlaySound("explosionSound");
+            await Task.Delay(100);
             GameLost = true;
+            StopTimer();
+            RevealMines();
             return;
         }
 
+        await PlaySound("clickSound");
         RevealCell(row, col);
 
         if (CountFlagged() == Mines && CountUnrevealed() == Mines)
         {
             GameWon = true;
+            StopTimer();
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();  // Add this line
         }
-        //if (CellFlagged[row, col])
-        //{
-        //    return;
-        //}
-
-        //if (CellMined[row, col])
-        //{
-        //    CellContents[row, col] = "*";
-        //    CellRevealed[row, col] = true;
-        //    return;
-        //}
-
-        //RevealCell(row, col);
-
-        //if (GameWon)
-        //{
-        //    return;
-        //}
-
-        //if (GameLost)
-        //{
-        //    RevealMines();
-        //}
     }
 
-    private void FlagCell(int row, int col)
+    private async Task FlagCell(int row, int col)
     {
-        if (CellRevealed[row, col])
+        if (CellRevealed[row, col] || GameLost || GameWon)  // Add check for game over states
         {
             return;
         }
 
         CellFlagged[row, col] = !CellFlagged[row, col];
+        await PlaySound("flagSound");
     }
 
     private void RevealCell(int row, int col)
@@ -306,6 +578,7 @@
         CellRevealed[row, col] = true;
         if (NeighborMineCounts[row, col] == 0)
         {
+            CellContents[row, col] = "";
             foreach (var neighbor in GetNeighbors(row, col))
             {
                 RevealCell(neighbor.row, neighbor.col);
@@ -323,9 +596,9 @@
         {
             for (int col = 0; col < Cols; col++)
             {
-                if (CellMined[row, col])
+                if (CellMined[row, col] && !CellRevealed[row, col]) // Only reveal mines that aren't already revealed
                 {
-                    CellContents[row, col] = "*";
+                    CellContents[row, col] = "💣";
                     CellRevealed[row, col] = true;
                 }
             }
@@ -372,184 +645,136 @@
         return count;
     }
 
-    protected override void OnInitialized()
+    private async Task PlaySound(string soundId)
     {
-        NewGame();
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
     }
 
+    private async Task ChangeBoardSize(string size)
+    {
+        if (int.TryParse(size, out int newSize))
+        {
+            currentSize = newSize;
+            InitializeArrays();
+            NewGame();
+            leaderboard = await LoadLeaderboard(currentSize);  // Load leaderboard for new size
+        }
+    }
 
-    //private const int Rows = 10;
-    //private const int Cols = 10;
-    //private const int Mines = 10;
+    protected override async Task OnInitializedAsync()
+    {
+        InitializeArrays();
+        NewGame();
+        leaderboard = await LoadLeaderboard(currentSize);
+    }
 
-    //private enum State
-    //{
-    //    Playing,
-    //    Won,
-    //    Lost
-    //}
+    // Update the cell size based on board size
+    private string CellSize => currentSize switch
+    {
+        10 => "25px",
+        20 => "23px",  // Increased from 20px
+        30 => "20px",  // Increased from 15px
+        _ => "25px"
+    };
 
+    // Add a container size property to control the overall board size
+    private string ContainerSize => currentSize switch
+    {
+        10 => "auto",
+        20 => "500px",  // Fixed width for 20x20
+        30 => "640px",  // Fixed width for 30x30
+        _ => "auto"
+    };
 
-    //private State GameState { get; set; }
-    //private int[,] Board { get; set; } = new int[Rows, Cols];
-    //private string[,] CellContents { get; set; } = new string[Rows, Cols];
-    //private bool[,] Revealed { get; set; } = new bool[Rows, Cols];
-    //private bool[,] Flagged { get; set; } = new bool[Rows, Cols];
-    //private int MinesFound { get; set; }
+    // Update the cell class to include the number colors
+    private string GetCellClass(bool revealed, bool mined, bool flagged, string content)
+    {
+        var classes = new List<string>();
+        
+        if (revealed)
+        {
+            classes.Add("revealed");
+            if (mined)
+            {
+                classes.Add("mine-exploded");
+            }
+            else if (int.TryParse(content, out int number))
+            {
+                classes.Add($"revealed-{number}");
+            }
+        }
+        
+        if (flagged)
+        {
+            classes.Add("flagged");
+        }
+        
+        return string.Join(" ", classes);
+    }
 
-    //protected override void OnInitialized()
-    //{
-    //    NewGame();
-    //}
+    public void Dispose()
+    {
+        StopTimer();
+    }
 
-    //private string GameStateString
-    //{
-    //    get
-    //    {
-    //        if (GameLost)
-    //        {
-    //            return "You lost :(";
-    //        }
-    //        else if (GameWon)
-    //        {
-    //            return "You won!";
-    //        }
-    //        else
-    //        {
-    //            return "";
-    //        }
-    //    }
-    //}
+    // Add this to the @code block
+    private class LeaderboardEntry
+    {
+        public int BoardSize { get; set; }
+        public int Time { get; set; }
+        public DateTime Date { get; set; }
+    }
 
-    //private void NewGame()
-    //{
-    //    Board = new int[Rows, Cols];
-    //    CellContents = new string[Rows, Cols];
-    //    Revealed = new bool[Rows, Cols];
-    //    Flagged = new bool[Rows, Cols];
-    //    MinesFound = 0;
-    //    GameState = State.Playing;
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
 
-    //    // Place mines randomly
-    //    Random rand = new Random();
-    //    for (int i = 0; i < Mines; i++)
-    //    {
-    //        int row = rand.Next(Rows);
-    //        int col = rand.Next(Cols);
-    //        if (Board[row, col] == 9)
-    //        {
-    //            i--;
-    //        }
-    //        else
-    //        {
-    //            Board[row, col] = 9;
-    //        }
-    //    }
+    private async Task SaveLeaderboardEntry()
+    {
+        if (GameWon)
+        {
+            var entry = new LeaderboardEntry
+            {
+                BoardSize = currentSize,
+                Time = elapsedSeconds,
+                Date = DateTime.Now
+            };
 
-    //    // Calculate adjacent mine counts
-    //    for (int row = 0; row < Rows; row++)
-    //    {
-    //        for (int col = 0; col < Cols; col++)
-    //        {
-    //            if (Board[row, col] != 9)
-    //            {
-    //                int count = 0;
-    //                for (int r = row - 1; r <= row + 1; r++)
-    //                {
-    //                    for (int c = col - 1; c <= col + 1; c++)
-    //                    {
-    //                        if (r >= 0 && r < Rows && c >= 0 && c < Cols && Board[r, c] == 9)
-    //                        {
-    //                            count++;
-    //                        }
-    //                    }
-    //                }
-    //                Board[row, col] = count;
-    //            }
-    //        }
-    //    }
-    //    StateHasChanged();
-    //}
+            var existingEntries = await LoadLeaderboard(currentSize);
+            existingEntries.Add(entry);
+            
+            // Sort by time and take top 5
+            var topEntries = existingEntries
+                .OrderBy(e => e.Time)
+                .Take(MaxLeaderboardEntries)
+                .ToList();
 
-    //private void ClickCell(int row, int col)
-    //{
-    //    if (!Revealed[row, col] && !Flagged[row, col])
-    //    {
-    //        Revealed[row, col] = true;
-    //        CellContents[row, col] = Board[row, col].ToString();
-    //        if (Board[row, col] == 9)
-    //        {
-    //            GameState = State.Lost;
-    //        }
-    //        else if (Board[row, col] == 0)
-    //        {
-    //            // Auto-reveal adjacent cells
-    //            for (int r = row - 1; r <= row + 1; r++)
-    //            {
-    //                for (int c = col - 1; c <= col + 1; c++)
-    //                {
-    //                    if (r >= 0 && r < Rows && c >= 0 && c < Cols)
-    //                    {
-    //                        ClickCell(r, c);
-    //                    }
-    //                }
-    //            }
-    //        }
+            await JSRuntime.InvokeVoidAsync(
+                "localStorage.setItem",
+                $"minesweeper-leaderboard-{currentSize}",
+                System.Text.Json.JsonSerializer.Serialize(topEntries)
+            );
 
-    //        CheckWin();
-    //    }
-    //}
+            leaderboard = await LoadLeaderboard(currentSize);
+        }
+    }
 
-    //private void FlagCell(int row, int col)
-    //{
-    //    if (!Revealed[row, col])
-    //    {
-    //        Flagged[row, col] = !Flagged[row, col];
-    //        if (Flagged[row, col])
-    //        {
-    //            CellContents[row, col] = "F";
-    //            MinesFound++;
-    //        }
-    //        else
-    //        {
-    //            CellContents[row, col] = "";
-    //            MinesFound--;
-    //        }
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard(int size)
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                $"minesweeper-leaderboard-{size}"
+            );
 
-    //        CheckWin();
-    //    }
-    //}
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
 
-    //private void CheckWin()
-    //{
-    //    if (MinesFound == Mines)
-    //    {
-    //        GameState = State.Won;
-    //    }
-    //    else if (GameState == State.Playing)
-    //    {
-    //        // Check if all non-mine cells are revealed
-    //        bool allRevealed = true;
-    //        for (int row = 0; row < Rows; row++)
-    //        {
-    //            for (int col = 0; col < Cols; col++)
-    //            {
-    //                if (!Revealed[row, col] && Board[row, col] != 9)
-    //                {
-    //                    allRevealed = false;
-    //                    break;
-    //                }
-    //            }
-    //            if (!allRevealed)
-    //            {
-    //                break;
-    //            }
-    //        }
-
-    //        if (allRevealed)
-    //        {
-    //            GameState = State.Won;
-    //        }
-    //    }
-    //}
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
 }

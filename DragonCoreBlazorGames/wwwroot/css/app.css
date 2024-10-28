@@ -99,3 +99,163 @@ a, .btn-link {
     .loading-progress-text:after {
         content: var(--blazor-load-percentage-text, "Loading");
     }
+
+/* Add these new styles for consistent game headers */
+.game-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #2c3e50, #3498db);
+    border-radius: 10px;
+    color: white;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.game-title i {
+    font-size: 2em;
+    color: #ffd700;
+}
+
+.game-title h1 {
+    margin: 0;
+    font-size: 2.5em;
+}
+
+/* Common game container styles */
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    font-family: Arial, sans-serif;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Common game header styles */
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Common button styles */
+.game-btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.game-btn:hover {
+    background-color: #45a049;
+    transform: scale(1.05);
+}
+
+/* Common stats display */
+.stats-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 5px 15px;
+}
+
+.stats-item .label {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.stats-item .value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #2c3e50;
+    font-family: monospace;
+}
+
+/* Common leaderboard styles */
+.leaderboard {
+    margin-top: 30px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.leaderboard h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.leaderboard table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.leaderboard th,
+.leaderboard td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.leaderboard th {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+
+.leaderboard tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.leaderboard tr:hover {
+    background-color: #e9ecef;
+}
+
+/* Common animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+
+@keyframes slideDown {
+    from { 
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to { 
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+@keyframes blink {
+    50% {
+        opacity: 1;
+    }
+}

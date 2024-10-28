@@ -1,0 +1,184 @@
+@page "/diceroller"
+@inject IJSRuntime JSRuntime
+<link href="css/diceroller.css" rel="stylesheet" />
+
+<div class="game-title">
+    <i class="fas fa-dice"></i>
+    <h1>Dice Roller</h1>
+</div>
+
+<audio id="rollSound" preload="auto">
+    <source src="sounds/dice-roll.mp3" type="audio/mpeg">
+</audio>
+<audio id="yahtzeeSound" preload="auto">
+    <source src="sounds/yahtzee.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <button class="game-btn" @onclick="RollDice">Roll Dice</button>
+        <div class="stats-item">
+            <span class="label">Total</span>
+            <span class="value">@diceTotal</span>
+        </div>
+        <div class="stats-item">
+            <span class="label">Rolls</span>
+            <span class="value">@rollCount</span>
+        </div>
+    </div>
+
+    @if (showYahtzee)
+    {
+        <div class="yahtzee-celebration">
+            <div class="yahtzee-text">YAHTZEE!!!</div>
+            @for (int i = 0; i < 30; i++)
+            {
+                var offsetX = random.Next(-300, 300);
+                var offsetY = random.Next(-200, 0);
+                <div class="firework" style="--delay: @(i * 0.1)s; --offset-x: @(offsetX)px; --offset-y: @(offsetY)px"></div>
+            }
+        </div>
+    }
+
+    <div class="dice-container">
+        @foreach (var die in dice)
+        {
+            <div class="die @(isRolling ? "rolling" : "")" style="--random-rotation: @die.Rotation">
+                <div class="die-cube">
+                    <div class="face front">
+                        <img src="images/dice/dice-@(die.Value).png" alt="@die.Value" />
+                    </div>
+                    <div class="face back">
+                        <img src="images/dice/dice-@(7-die.Value).png" alt="@(7-die.Value)" />
+                    </div>
+                    <div class="face top">
+                        <img src="images/dice/dice-@(((die.Value + 1) % 6) + 1).png" alt="@(((die.Value + 1) % 6) + 1)" />
+                    </div>
+                    <div class="face bottom">
+                        <img src="images/dice/dice-@(((die.Value + 4) % 6) + 1).png" alt="@(((die.Value + 4) % 6) + 1)" />
+                    </div>
+                    <div class="face right">
+                        <img src="images/dice/dice-@(((die.Value + 2) % 6) + 1).png" alt="@(((die.Value + 2) % 6) + 1)" />
+                    </div>
+                    <div class="face left">
+                        <img src="images/dice/dice-@(((die.Value + 3) % 6) + 1).png" alt="@(((die.Value + 3) % 6) + 1)" />
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="roll-history">
+        <h3>Previous Rolls</h3>
+        <div class="history-list">
+            @foreach (var roll in rollHistory)
+            {
+                <div class="history-item">
+                    <span class="roll-total">@roll.Total</span>
+                    <span class="roll-details">(@string.Join(", ", roll.Values))</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private class Die
+    {
+        public int Value { get; set; } = 1;
+        public string Rotation { get; set; } = "0deg";
+    }
+
+    private class RollHistory
+    {
+        public int Total { get; set; }
+        public List<int> Values { get; set; } = new();
+        public DateTime Time { get; set; }
+    }
+
+    private List<Die> dice = new();
+    private List<RollHistory> rollHistory = new();
+    private bool isRolling = false;
+    private int diceTotal = 0;
+    private Random random = new();
+    private int rollCount = 0;
+    private bool showYahtzee = false;
+
+    protected override void OnInitialized()
+    {
+        // Initialize 5 dice
+        for (int i = 0; i < 5; i++)
+        {
+            dice.Add(new Die());
+        }
+    }
+
+    private async Task RollDice()
+    {
+        if (isRolling) return;
+
+        isRolling = true;
+        rollCount++;
+        await PlaySound("rollSound");
+
+        // Generate random rotations for animation
+        foreach (var die in dice)
+        {
+            die.Rotation = $"{random.Next(360, 720)}deg";
+        }
+
+        StateHasChanged();
+        await Task.Delay(1000);
+
+        // For demo: every 5th roll is Yahtzee
+        var newValues = new List<int>();
+        if (rollCount % 5 == 0)
+        {
+            // Force Yahtzee with random value
+            int yahtzeeValue = random.Next(1, 7);
+            newValues = Enumerable.Repeat(yahtzeeValue, 5).ToList();
+        }
+        else
+        {
+            newValues = dice.Select(_ => random.Next(1, 7)).ToList();
+        }
+
+        for (int i = 0; i < dice.Count; i++)
+        {
+            dice[i].Value = newValues[i];
+        }
+
+        diceTotal = newValues.Sum();
+
+        // Check for Yahtzee
+        if (newValues.Distinct().Count() == 1)
+        {
+            showYahtzee = true;
+            StateHasChanged();
+            await PlaySound("yahtzeeSound");
+            await Task.Delay(3000); // Show celebration for 3 seconds
+            showYahtzee = false;
+        }
+
+        // Add to history
+        rollHistory.Insert(0, new RollHistory 
+        { 
+            Total = diceTotal,
+            Values = newValues,
+            Time = DateTime.Now
+        });
+
+        if (rollHistory.Count > 10)
+        {
+            rollHistory.RemoveAt(rollHistory.Count - 1);
+        }
+
+        isRolling = false;
+        StateHasChanged();
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+}

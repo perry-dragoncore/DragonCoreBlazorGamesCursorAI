@@ -1,154 +1,439 @@
 ﻿@page "/whackadragon"
-@inject IJSRuntime JsRuntime
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
 
-<h3>WhackADragon</h3>
+<div class="game-title">
+    <i class="fas fa-dragon"></i>
+    <h1>Whack A Dragon</h1>
+</div>
+
+<audio id="missSound" preload="auto">
+    <source src="audio/click2.mp3" type="audio/mpeg">
+</audio>
+<audio id="hitSound" preload="auto">
+    <source src="audio/blip1.mp3" type="audio/mpeg">
+</audio>
+<audio id="gameOverSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <button class="new-game-btn" @onclick="StartNewGame">New Game</button>
+        <div class="stats">
+            <div class="stat-item">
+                <span class="label">Score:</span>
+                <span class="value">@Score</span>
+            </div>
+            <div class="stat-item">
+                <span class="label">Time:</span>
+                <span class="value">@TimeRemaining</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-board" @onclick="@(() => WhackBoard())">
+        @foreach (var target in Targets)
+        {
+            <div class="target-container" style="top:@($"{target.Top}px");left:@($"{target.Left}px")">
+                <img class="target @target.ClassName @(target.IsVisible ? "visible" : "")" 
+                     src="@target.ImageUrl" 
+                     @onclick="@(() => WhackTarget(target))" />
+            </div>
+        }
+    </div>
+
+    @if (GameOver)
+    {
+        <div class="game-over">
+            <h2>Game Over!</h2>
+            <p>Final Score: @Score</p>
+            <button class="play-again-btn" @onclick="StartNewGame">Play Again</button>
+        </div>
+    }
+
+    <div class="leaderboard">
+        <h2>High Scores</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Score</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>@entry.Score</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
 <style>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+    }
+
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 600px;
+        margin-bottom: 20px;
+    }
+
+    .stats {
+        display: flex;
+        gap: 20px;
+    }
+
+    .stat-item {
+        background: #f8f9fa;
+        padding: 10px 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .stat-item .label {
+        font-size: 14px;
+        color: #666;
+        margin-right: 8px;
+    }
+
+    .stat-item .value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #2c3e50;
+    }
+
     .game-board {
         cursor: url('/images/custom-cursor.png'), auto;
         position: relative;
         width: 600px;
         height: 600px;
-        background-color: #FFF;
-        border: 1px solid #000;
+        background: linear-gradient(135deg, #87CEEB, #4682B4);
+        border-radius: 10px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        overflow: hidden;
     }
 
-    .target {
-        cursor: url('/images/custom-cursor.png'), auto;
+    .target-container {
         position: absolute;
         width: 100px;
         height: 100px;
-        border: none;
-        transition: all 0.2s ease-in-out;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 
-        .target.shrink {
-            transition: all 1.0s;
-            transform: scale(0);
-        }
+    .target {
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        transform: scale(0);
+        transition: all 0.3s ease-out;
+        cursor: url('/images/custom-cursor.png'), auto;
+    }
 
-    .score {
-        margin-top: 10px;
+    .target.visible {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .target.shrink {
+        animation: shrink 0.3s ease-out forwards;
+    }
+
+    .new-game-btn, .play-again-btn {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .new-game-btn:hover, .play-again-btn:hover {
+        background-color: #45a049;
+        transform: scale(1.05);
+    }
+
+    .game-over {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    .leaderboard {
+        margin-top: 30px;
+        width: 100%;
+        max-width: 600px;
+    }
+
+    .leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard th, .leaderboard td {
+        padding: 12px;
+        text-align: center;
+        border-bottom: 1px solid #eee;
+    }
+
+    .leaderboard th {
+        background: #4CAF50;
+        color: white;
+    }
+
+    .leaderboard tr:nth-child(even) {
+        background: #f9f9f9;
+    }
+
+    @@keyframes shrink {
+        to {
+            transform: scale(0);
+            opacity: 0;
+        }
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
     }
 </style>
 
-<div class="game-board" @onclick="@(() => WhackBoard())">
-    <div>
-        @foreach (var target in Targets)
-        {
-            <img class="target @target.ClassName" src="@target.ImageUrl" @onclick="@(() => WhackTarget(target))" style="top:@string.Format("{0}px",target.Top);left:@string.Format("{0}px",target.Left);display:@(target.IsVisible ? "block" : "none")" />
-        }
-    </div>
-</div>
-<div class="score">
-    <p>Time Remaining: @TimeRemaining seconds</p>
-    <p>Score: @Score</p>
-</div>
-<audio src="audio/blip1.mp3" id="miss-sound"></audio>
-<audio src="audio/explode.wav" id="hit-sound"></audio>
-
 @code {
-    private IJSRuntime _jsRuntime;
     private List<Target> Targets { get; set; } = new List<Target>();
     private int Score { get; set; }
     private int TimeRemaining { get; set; } = 30;
+    private bool GameOver { get; set; }
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+    private Timer gameTimer;
+    private Timer targetTimer;
 
-    protected override void OnInitialized()
+    private class LeaderboardEntry
     {
+        public int Score { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load the leaderboard first
+        leaderboard = await LoadLeaderboard();
+        
+        // Then start the game
+        StartNewGame();
+    }
+
+    private async Task StartNewGame()
+    {
+        Score = 0;
+        TimeRemaining = 30;
+        GameOver = false;
         Targets = GenerateTargets();
 
-        // Start the timer to show and hide the targets
-        var timer = new Timer(state => ShowRandomTarget(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(new Random().Next(1, 4)));
+        // Reset and start timers
+        gameTimer?.Dispose();
+        targetTimer?.Dispose();
 
-        // Start the timer for the countdown
-        var countdownTimer = new Timer(state => UpdateTimeRemaining(), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+        gameTimer = new Timer(UpdateTimeRemaining, null, 0, 1000);
+        targetTimer = new Timer(ShowRandomTarget, null, 1000, 1000);
 
-        _jsRuntime = JsRuntime;
+        // Reload leaderboard when starting new game
+        leaderboard = await LoadLeaderboard();
     }
 
     private List<Target> GenerateTargets()
     {
-        List<Target> targets = new List<Target>();
-
-        // Generate targets with image URLs and random positions
-        Target t = new Target();
-        t.ImageUrl = "/images/X.png";
-        t.IsVisible = false;
-        t.RandomizeLocation();
-        targets.Add(t);
-
-        Target t2 = new Target();
-        t2.ImageUrl = "/images/O.png";
-        t2.IsVisible = false;
-        t2.RandomizeLocation();
-        targets.Add(t2);
-
-        return targets;
-    }
-
-    private void ShowRandomTarget()
-    {
-        if (TimeRemaining <= 0) return;
-
-        // Find a random target that is currently not visible
-        var random = new Random();
-        var target = Targets[random.Next(Targets.Count)];
-        while (target.IsVisible)
+        return new List<Target>
         {
-            target = Targets[random.Next(Targets.Count)];
-        }
-
-        // Show the target and start the timer to hide it
-        target.IsVisible = true;
-        StateHasChanged();
-        var timer = new Timer(state => HideTarget(target), null, TimeSpan.FromSeconds(0.6), Timeout.InfiniteTimeSpan);
+            new Target { ImageUrl = "/images/X.png", IsVisible = false },
+            new Target { ImageUrl = "/images/O.png", IsVisible = false }
+        };
     }
 
-    private void HideTarget(Target target)
+    private void ShowRandomTarget(object state)
     {
-        // Hide the target and update the state
+        if (GameOver) return;
+
+        InvokeAsync(() =>
+        {
+            // Hide all targets first
+            foreach (var target in Targets)
+            {
+                target.IsVisible = false;
+                if (!target.IsVisible)  // Only randomize location if target is hidden
+                {
+                    target.RandomizeLocation();
+                }
+            }
+
+            // Show a random target
+            var random = new Random();
+            var availableTargets = Targets.Where(t => !t.IsVisible).ToList();
+            if (availableTargets.Any())
+            {
+                availableTargets[random.Next(availableTargets.Count)].IsVisible = true;
+            }
+            
+            StateHasChanged();
+        });
+    }
+
+    private async Task WhackBoard()
+    {
+        if (GameOver) return;
+        await PlaySound("missSound");
+    }
+
+    private async Task WhackTarget(Target target)
+    {
+        if (!target.IsVisible || GameOver) return;
+
+        await PlaySound("hitSound");
+        Score++;
+        target.ClassName = "shrink";
         target.IsVisible = false;
-        target.RandomizeLocation();
+        StateHasChanged();
+
+        // Add this delay to match the shrink animation
+        await Task.Delay(300);
+        target.ClassName = "";  // Reset the class name
+        target.RandomizeLocation();  // Give it a new location
         StateHasChanged();
     }
 
-    private async void WhackBoard()
+    private async Task PlaySound(string soundId)
     {
-        // Play the miss sound
-        await _jsRuntime.InvokeVoidAsync(
-          "playAudio",
-          "miss-sound"
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private void UpdateTimeRemaining(object state)
+    {
+        if (TimeRemaining > 0)
+        {
+            TimeRemaining--;
+            InvokeAsync(StateHasChanged);
+        }
+        else if (!GameOver)
+        {
+            EndGame();
+        }
+    }
+
+    private async Task EndGame()
+    {
+        if (!GameOver)  // Only run this once
+        {
+            GameOver = true;
+            gameTimer?.Dispose();
+            targetTimer?.Dispose();
+
+            await PlaySound("gameOverSound");
+            await SaveScore();  // Changed from calling in InvokeAsync
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveScore()
+    {
+        try 
+        {
+            var entry = new LeaderboardEntry
+            {
+                Score = Score,
+                Date = DateTime.Now
+            };
+
+            // Load existing entries first
+            var existingEntries = await LoadLeaderboard();
+            existingEntries.Add(entry);
+
+            // Update the leaderboard property
+            leaderboard = existingEntries
+                .OrderByDescending(e => e.Score)
+                .Take(MaxLeaderboardEntries)
+                .ToList();
+
+            // Save to localStorage
+            var json = System.Text.Json.JsonSerializer.Serialize(leaderboard);
+            await JSRuntime.InvokeVoidAsync(
+                "localStorage.setItem",
+                "whackadragon-leaderboard",
+                json
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving score: {ex.Message}");
+        }
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "whackadragon-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(leaderboard)
         );
     }
 
-    private async void WhackTarget(Target target)
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
     {
-        if (target.IsVisible)
+        try
         {
-            // Play the miss sound
-            await _jsRuntime.InvokeVoidAsync(
-              "playAudio",
-              "hit-sound"
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "whackadragon-leaderboard"
             );
 
-            //target.IsVisible = false;
-            Score++;
-
-            // Set the target size to 0 to start the shrinking animation
-            target.Size = 0;
-            StateHasChanged();
-
-            // Wait for the next render cycle to apply the "shrink" class and start the transition
-            await Task.Delay(1);
-            target.ClassName = "shrink";
-            StateHasChanged();
-
-            // Wait for the transition to complete before resetting the size and class name
-            await Task.Delay(TimeSpan.FromSeconds(1));
-            target.Size = 1;
-            target.ClassName = "";
-            target.IsVisible = false;
-            StateHasChanged();
+            if (!string.IsNullOrEmpty(json))
+            {
+                var loadedLeaderboard = System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json);
+                return loadedLeaderboard ?? new List<LeaderboardEntry>();
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading leaderboard: {ex.Message}");
+        }
+
+        return new List<LeaderboardEntry>();
     }
 
     public class Target
@@ -157,38 +442,18 @@
         public int Top { get; set; }
         public int Left { get; set; }
         public bool IsVisible { get; set; }
-        public double Size { get; set; } = 1.0;
-        public string ClassName { get; set; }
+        public string ClassName { get; set; } = "";
 
         public void RandomizeLocation()
         {
             Top = new Random().Next(0, 500);
             Left = new Random().Next(0, 500);
-            Console.WriteLine(Top);
-            Console.WriteLine(Left);
         }
     }
 
-
-    private void UpdateTimeRemaining()
+    public void Dispose()
     {
-        if (TimeRemaining > 0)
-        {
-            TimeRemaining--;
-        }
-        else
-        {
-            EndGame();
-        }
-        StateHasChanged();
-    }
-
-    private void EndGame()
-    {
-        // Do any final calculations or actions, such as saving the score to a database
-        // ...
-
-        // Navigate to the game over page or display a message
-        // ...
+        gameTimer?.Dispose();
+        targetTimer?.Dispose();
     }
 }

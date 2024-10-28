@@ -1,0 +1,236 @@
+.dice-container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 20px;
+    perspective: 1200px;
+}
+
+.die {
+    width: 50px;
+    height: 50px;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 1.5s ease-out;
+}
+
+.die-cube {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 1.5s ease-out;
+}
+
+.die.rolling .die-cube {
+    animation: roll 1.5s ease-out;
+}
+
+.face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+}
+
+.face img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+.front  { transform: translateZ(25px); }
+.back   { transform: rotateY(180deg) translateZ(25px); }
+.right  { transform: rotateY(90deg) translateZ(25px); }
+.left   { transform: rotateY(-90deg) translateZ(25px); }
+.top    { transform: rotateX(90deg) translateZ(25px); }
+.bottom { transform: rotateX(-90deg) translateZ(25px); }
+
+@keyframes roll {
+    0% { 
+        transform: rotateX(0) rotateY(0) rotateZ(0); 
+    }
+    30% {
+        transform: rotateX(720deg) rotateY(360deg) rotateZ(180deg);
+    }
+    60% {
+        transform: rotateX(1080deg) rotateY(720deg) rotateZ(360deg);
+    }
+    80% {
+        transform: rotateX(1260deg) rotateY(900deg) rotateZ(450deg);
+    }
+    100% { 
+        transform: rotateX(1440deg) rotateY(1080deg) rotateZ(540deg);
+    }
+}
+
+/* Add a bounce effect at the end of the roll */
+.die.rolling {
+    animation: bounce 0.3s ease-out 1.5s;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+/* Add some depth to the dice */
+.die::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 10px;
+    bottom: -10px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 50%;
+    filter: blur(3px);
+    transform: scale(0.8);
+    transition: all 0.3s ease;
+}
+
+.die.rolling::before {
+    transform: scale(1.2);
+    opacity: 0.5;
+}
+
+.roll-history {
+    margin-top: 30px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.history-list {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.roll-total {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.roll-details {
+    color: #666;
+}
+
+.yahtzee-celebration {
+    position: fixed;  /* Changed from absolute */
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.yahtzee-text {
+    font-size: 5em;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 
+        0 0 10px rgba(255,215,0,0.5),
+        0 0 20px rgba(255,215,0,0.3),
+        0 0 30px rgba(255,215,0,0.2);
+    animation: pulse 0.5s ease-in-out infinite alternate;
+    z-index: 1001;
+}
+
+.firework {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    left: 50%;  /* Center horizontally */
+    top: 50%;   /* Center vertically */
+    animation: shoot 1s ease-out forwards;
+    animation-delay: var(--delay);
+}
+
+.firework::before {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff;  /* Add solid color */
+    animation: explode 0.8s ease-out forwards;
+    animation-delay: calc(var(--delay) + 0.3s);
+    opacity: 0;
+}
+
+@keyframes shoot {
+    0% {
+        transform: translate(0, 0);  /* Start from center */
+    }
+    50%, 100% {
+        transform: translate(
+            calc(var(--offset-x, 0px)),
+            calc(var(--offset-y, 0px))
+        );
+    }
+}
+
+@keyframes explode {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+        background: #fff;  /* Start white */
+        box-shadow: 
+            0 0 2px 2px #fff,  /* Tighter, sharper glow */
+            0 0 4px 4px #ffd700,  /* Gold */
+            0 0 6px 6px #ff4500;  /* Orange-red */
+    }
+    100% {
+        transform: scale(1.2);
+        opacity: 0;
+        background: #ffd700;  /* Fade to gold */
+        box-shadow: 
+            0 0 20px 20px rgba(255,255,255,0),
+            0 0 30px 30px rgba(255,215,0,0),
+            0 0 40px 40px rgba(255,69,0,0);
+    }
+}
+
+/* Add different colors for variety */
+.firework:nth-child(3n)::before { background: #ffd700; }  /* Gold */
+.firework:nth-child(3n+1)::before { background: #ff4500; }  /* Orange-red */
+.firework:nth-child(3n+2)::before { background: #00ff00; }  /* Green */
+
+@keyframes pulse {
+    from { 
+        transform: scale(1);
+        text-shadow: 
+            0 0 10px rgba(255,215,0,0.5),
+            0 0 20px rgba(255,215,0,0.3),
+            0 0 30px rgba(255,215,0,0.2);
+    }
+    to { 
+        transform: scale(1.1);
+        text-shadow: 
+            0 0 20px rgba(255,215,0,0.8),
+            0 0 30px rgba(255,215,0,0.6),
+            0 0 40px rgba(255,215,0,0.4);
+    }
+}

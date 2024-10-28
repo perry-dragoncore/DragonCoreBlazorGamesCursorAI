@@ -1,0 +1,229 @@
+.game-title {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.game-title i {
+    font-size: 2.5rem;
+    color: #ffd700;
+}
+
+.game-title h1 {
+    margin: 0;
+    color: #fff;
+}
+
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    gap: 20px;
+}
+
+.player-info {
+    padding: 10px 20px;
+    border-radius: 8px;
+    background: #f0f0f0;
+    transition: all 0.3s ease;
+    border: 2px solid var(--player-color);
+    color: #333;
+}
+
+.player-info.active {
+    background: var(--player-color);
+    color: white;
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.player-label {
+    font-weight: bold;
+}
+
+.player-score {
+    margin-left: 10px;
+    font-size: 1.2em;
+}
+
+.game-board {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 20px;
+    background: #2c3e50;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    margin: 20px auto;
+    max-width: fit-content;
+}
+
+.board-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.line-row {
+    display: flex;
+    align-items: center;
+    gap: 0;  /* Remove gap */
+    margin-left: -3px;  /* Adjust for initial offset */
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    background-color: #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(255,255,255,0.5);
+}
+
+.horizontal-line {
+    width: 60px;
+    height: 8px;
+    background-color: rgba(255,255,255,0.1);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 4px;
+}
+
+.horizontal-line:hover:not(.player1):not(.player2) {
+    background-color: rgba(255,255,255,0.3);
+}
+
+.vertical-line {
+    width: 8px;
+    height: 60px;
+    background-color: rgba(255,255,255,0.1);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 4px;
+    margin: 0 4px;  /* Adjust spacing between vertical lines */
+}
+
+.vertical-line:hover:not(.player1):not(.player2) {
+    background-color: rgba(255,255,255,0.3);
+}
+
+.box {
+    width: 60px;
+    height: 60px;
+    background-color: transparent;
+    transition: all 0.3s ease;
+    border-radius: 4px;
+    margin: 0;  /* Remove any margin */
+}
+
+.horizontal-line.player1, 
+.vertical-line.player1, 
+.box.player1 {
+    background-color: #4CAF50;
+    box-shadow: 0 0 8px rgba(76,175,80,0.5);
+}
+
+.horizontal-line.player2, 
+.vertical-line.player2, 
+.box.player2 {
+    background-color: #f44336;
+    box-shadow: 0 0 8px rgba(244,67,54,0.5);
+}
+
+.game-over {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.restart-btn {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.restart-btn:hover {
+    background-color: #45a049;
+    transform: scale(1.05);
+}
+
+.leaderboard {
+    margin-top: 30px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.leaderboard table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.leaderboard th,
+.leaderboard td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.leaderboard th {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+
+.leaderboard tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.leaderboard tr:hover {
+    background-color: #e9ecef;
+}
+
+.winner-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.game-btn {
+    padding: 10px 20px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.game-btn:hover {
+    background-color: #2980b9;
+    transform: scale(1.05);
+}
