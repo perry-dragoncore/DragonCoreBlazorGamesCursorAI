@@ -1,12 +1,13 @@
-﻿<Router AppAssembly="@typeof(App).Assembly">
+﻿@using DragonCoreBlazorGames.Shared
+<Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(DragonCoreBlazorGames.Shared.MainLayout)" />
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
         <FocusOnNavigate RouteData="@routeData" Selector="h1" />
     </Found>
     <NotFound>
-        <PageTitle>Not found</PageTitle>
-        <LayoutView Layout="@typeof(DragonCoreBlazorGames.Shared.MainLayout)">
-            <p role="alert">Sorry, there's nothing at this address.</p>
+        <PageTitle>404 - Not Found</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <DragonCoreBlazorGames.Pages.NotFoundPage />
         </LayoutView>
     </NotFound>
 </Router>

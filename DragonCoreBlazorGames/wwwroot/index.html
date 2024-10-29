@@ -7,7 +7,6 @@
     <title>DragonCoreBlazorGames</title>
     <base href="/" />
     <script src="app.js"></script>
-    <script src="js/mastermind.js"></script>
     <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
     <script type="module" src="https://cdn.jsdelivr.net/npm/@fluentui/web-components/dist/web-components.min.js"></script>
@@ -18,15 +17,27 @@
     <link href="manifest.json" rel="manifest" />
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
 </head>
 
 <body>
     <div id="app">
-        <svg class="loading-progress">
-            <circle r="40%" cx="50%" cy="50%" />
-            <circle r="40%" cx="50%" cy="50%" />
-        </svg>
-        <div class="loading-progress-text"></div>
+        <!-- Replace the default loading UI with our custom one -->
+        <div id="blazor-loading-ui">
+            <div class="loading-container">
+                <div class="dragon-container">
+                    <i class="fas fa-dragon"></i>
+                    <div class="flame-container">
+                        <div class="flame"></div>
+                        <div class="flame"></div>
+                        <div class="flame"></div>
+                    </div>
+                </div>
+                <div class="loading-text">Loading Dragon Games...</div>
+            </div>
+        </div>
     </div>
 
     <div id="blazor-error-ui">
@@ -37,71 +48,5 @@
     <script src="_framework/blazor.webassembly.js"></script>
     <script>navigator.serviceWorker.register('service-worker.js');</script>
 </body>
-
-<script>
-    window.playSound = (soundId) => {
-        const sound = document.getElementById(soundId);
-        if (sound) {
-            sound.currentTime = 0;
-            sound.play().catch(err => console.log('Error playing sound:', err));
-        }
-    }
-
-    window.scrollToBottom = (elementClassName) => {
-        const elements = document.getElementsByClassName(elementClassName);
-        if (elements && elements.length > 0) {
-            const element = elements[0];
-            element.scrollTop = element.scrollHeight;
-        }
-    }
-
-    window.typeWriter = (elementId, text, speed) => {
-        const element = document.getElementById(elementId);
-        if (!element) return;
-
-        element.style.opacity = "0";
-        element.innerHTML = "";
-        element.style.opacity = "1";
-
-        let i = 0;
-        const type = () => {
-            if (i < text.length) {
-                element.innerHTML += text.charAt(i);
-                i++;
-                setTimeout(type, speed);
-            }
-        };
-        type();
-    };
-
-    window.playBackgroundMusic = (volume = 0.3) => {
-        const music = document.getElementById('bgMusic');
-        if (music) {
-            music.volume = volume;
-            music.loop = true;
-            music.play().catch(err => console.log('Error playing music:', err));
-        }
-    };
-
-    window.toggleBackgroundMusic = () => {
-        const music = document.getElementById('bgMusic');
-        const btn = document.getElementById('musicToggle');
-        if (music) {
-            if (music.paused) {
-                music.play();
-                btn.innerHTML = '<i class="fas fa-volume-up"></i>';
-            } else {
-                music.pause();
-                btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
-            }
-        }
-    };
-
-    window.focusElement = (element) => {
-        if (element) {
-            element.focus();
-        }
-    };
-</script>
 
 </html>
