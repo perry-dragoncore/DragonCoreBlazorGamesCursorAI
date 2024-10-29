@@ -1,0 +1,598 @@
+@page "/assimilation"
+@using Microsoft.JSInterop
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+
+<link href="css/assimilation.css" rel="stylesheet" />
+
+<div class="game-title">
+    <i class="fas fa-chess-board"></i>
+    <h1>Assimilation</h1>
+</div>
+
+<audio id="selectSound" preload="auto">
+    <source src="sounds/select.mp3" type="audio/mpeg">
+</audio>
+<audio id="moveSound" preload="auto">
+    <source src="sounds/move.mp3" type="audio/mpeg">
+</audio>
+<audio id="captureSound1" preload="auto">
+    <source src="sounds/capture1.mp3" type="audio/mpeg">
+</audio>
+<audio id="captureSound2" preload="auto">
+    <source src="sounds/capture2.mp3" type="audio/mpeg">
+</audio>
+<audio id="winSound" preload="auto">
+    <source src="sounds/win.mp3" type="audio/mpeg">
+</audio>
+<audio id="introSound" preload="auto">
+    <source src="sounds/intro.mp3" type="audio/mpeg">
+</audio>
+<audio id="menuSound" preload="auto">
+    <source src="sounds/menu.mp3" type="audio/mpeg">
+</audio>
+
+<div class="game-container">
+    <div class="game-header">
+        <div class="game-controls">
+            <button class="game-btn" @onclick="RestartGame">New Game</button>
+            <select class="level-select" @bind="selectedLevelId">
+                @foreach (var level in levels)
+                {
+                    <option value="@level.Id">@level.Name</option>
+                }
+            </select>
+        </div>
+        <div class="player-info @(currentPlayer == 1 ? "active" : "")" style="--player-color: #ff4444;">
+            <span class="player-label">Red</span>
+            <span class="piece-count">@redPieces</span>
+        </div>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")" style="--player-color: #4444ff;">
+            <span class="player-label">Computer AI</span>
+            <span class="piece-count">@bluePieces</span>
+        </div>
+    </div>
+
+    <div class="board">
+        @for (int row = 0; row < 8; row++)
+        {
+            @for (int col = 0; col < 8; col++)
+            {
+                var r = row;
+                var c = col;
+                <div class="square @((row + col) % 2 == 0 ? "light" : "dark") 
+                            @(IsValidMove(r, c) ? "valid-move" : "") 
+                            @(selectedPiece?.Row == r && selectedPiece?.Col == c ? "selected" : "")
+                            @(board[row, col] == -1 ? "blocked" : "")"
+                     @onclick="() => HandleSquareClick(r, c)">
+                    @if (board[row, col] > 0)
+                    {
+                        <div class="piece @(board[row, col] == 1 ? "red" : "blue")"></div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (gameOver)
+    {
+        <div class="game-over">
+            <h2>Game Over!</h2>
+            @if (redPieces > bluePieces)
+            {
+                <p>Red Wins!</p>
+            }
+            else if (bluePieces > redPieces)
+            {
+                <p>Computer AI Wins!</p>
+            }
+            else
+            {
+                <p>It's a Tie!</p>
+            }
+            <button class="game-btn" @onclick="RestartGame">Play Again</button>
+        </div>
+    }
+
+    <div class="leaderboard">
+        <h2>Top Scores</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Pieces</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>
+                                <div class="piece @(entry.Winner == 1 ? "red" : "blue") mini"></div>
+                                @(entry.Winner == 1 ? "Red" : "Computer AI")
+                            </td>
+                            <td>@entry.PieceCount</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private const int BoardSize = 8;
+    private int[,] board = new int[BoardSize, BoardSize];
+    private int currentPlayer = 1; // 1 = Red, 2 = Blue
+    private int redPieces = 2;
+    private int bluePieces = 2;
+    private bool gameOver = false;
+    private (int Row, int Col)? selectedPiece;
+    private List<(int Row, int Col)> validMoves = new();
+    private bool isAIThinking = false;
+    private Random random = new Random();
+
+    private class LeaderboardEntry
+    {
+        public int Winner { get; set; }
+        public int PieceCount { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+
+    private class Level
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public int Wide { get; set; }
+        public int Tall { get; set; }
+        public string data { get; set; }
+    }
+
+    private List<Level> levels = new();
+    private string selectedLevelId = "1";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLevels();
+        await LoadLeaderboard();
+        await PlaySound("introSound");
+        await NewGame();
+    }
+
+    private async Task RestartGame()
+    {
+        await PlaySound("menuSound");
+
+        await NewGame();
+    }
+
+    private async Task NewGame()
+    {
+        board = new int[BoardSize, BoardSize];
+        
+        // Load selected level
+        var level = levels.FirstOrDefault(l => l.Id == selectedLevelId);
+        if (level != null)
+        {
+            LoadLevel(level);
+        }
+        else
+        {
+            // Default piece placement if no level loaded
+            board[0, 0] = 1;
+            board[7, 7] = 1;
+            board[0, 7] = 2;
+            board[7, 0] = 2;
+        }
+
+        CountPieces();
+        currentPlayer = 1;
+        gameOver = false;
+        selectedPiece = null;
+        validMoves.Clear();
+    }
+
+    private void LoadLevel(Level level)
+    {
+        redPieces = 0;
+        bluePieces = 0;
+
+        for (int i = 0; i < level.data.Length; i++)
+        {
+            int row = i / BoardSize;
+            int col = i % BoardSize;
+            
+            switch (level.data[i])
+            {
+                case 'X':
+                    board[row, col] = 1;  // Player 1
+                    redPieces++;
+                    break;
+                case 'O':
+                    board[row, col] = 2;  // Player 2
+                    bluePieces++;
+                    break;
+                case '*':
+                    board[row, col] = -1; // Blocked square
+                    break;
+                default:
+                    board[row, col] = 0;  // Empty square
+                    break;
+            }
+        }
+    }
+
+    private void CountPieces()
+    {
+        redPieces = 0;
+        bluePieces = 0;
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 1) redPieces++;
+                else if (board[row, col] == 2) bluePieces++;
+            }
+        }
+    }
+
+    private async Task HandleSquareClick(int row, int col)
+    {
+        if (gameOver || currentPlayer == 2 || isAIThinking) return;
+
+        // Player's move
+        if (board[row, col] == currentPlayer)
+        {
+            await PlaySound("selectSound");
+            selectedPiece = (row, col);
+            validMoves = GetValidMoves(row, col);
+            return;
+        }
+
+        if (selectedPiece.HasValue && validMoves.Contains((row, col)))
+        {
+            await PlaySound("moveSound");
+            await MakeMove(selectedPiece.Value.Row, selectedPiece.Value.Col, row, col);
+            selectedPiece = null;
+            validMoves.Clear();
+            
+            if (!gameOver)
+            {
+                currentPlayer = 2;
+                await MakeAIMove();
+            }
+        }
+    }
+
+    private async Task MakeAIMove()
+    {
+        isAIThinking = true;
+        StateHasChanged();
+        await Task.Delay(1000);
+
+        var bestMove = FindBestMove();
+        if (bestMove.HasValue)
+        {
+            await PlaySound("selectSound");
+            await Task.Delay(300);
+            await MakeMove(bestMove.Value.FromRow, bestMove.Value.FromCol, 
+                    bestMove.Value.ToRow, bestMove.Value.ToCol);
+        }
+
+        currentPlayer = 1;
+        isAIThinking = false;
+        await CheckGameOver();
+        StateHasChanged();
+    }
+
+    private (int FromRow, int FromCol, int ToRow, int ToCol)? FindBestMove()
+    {
+        var possibleMoves = new List<(int FromRow, int FromCol, int ToRow, int ToCol, int Score)>();
+
+        // Find all possible moves
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 2) // AI piece
+                {
+                    var moves = GetValidMoves(row, col);
+                    foreach (var move in moves)
+                    {
+                        int score = EvaluateMove(row, col, move.Row, move.Col);
+                        possibleMoves.Add((row, col, move.Row, move.Col, score));
+                    }
+                }
+            }
+        }
+
+        if (!possibleMoves.Any()) return null;
+
+        // Prioritize high-scoring moves but add some randomness
+        var bestScore = possibleMoves.Max(m => m.Score);
+        var bestMoves = possibleMoves.Where(m => m.Score >= bestScore - 1).ToList();
+        var selectedMove = bestMoves[random.Next(bestMoves.Count)];
+
+        return (selectedMove.FromRow, selectedMove.FromCol, selectedMove.ToRow, selectedMove.ToCol);
+    }
+
+    private int EvaluateMove(int fromRow, int fromCol, int toRow, int toCol)
+    {
+        int score = 0;
+        int distance = Math.Max(Math.Abs(toRow - fromRow), Math.Abs(toCol - fromCol));
+
+        // Simulate the move
+        var tempBoard = (int[,])board.Clone();
+        int captureCount = 0;
+
+        // Check for duplication vs jump
+        if (distance == 1)
+        {
+            score += 1; // Base score for duplication
+        }
+
+        // Count potential captures
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue;
+
+                int newRow = toRow + r;
+                int newCol = toCol + c;
+
+                if (IsValidPosition(newRow, newCol) && 
+                    board[newRow, newCol] == 1) // Enemy piece
+                {
+                    captureCount++;
+                }
+            }
+        }
+
+        score += captureCount * 2; // Prioritize captures
+
+        // Strategic positioning
+        if (toRow == 0 || toRow == BoardSize - 1 || 
+            toCol == 0 || toCol == BoardSize - 1)
+        {
+            score += 1; // Bonus for edge positions
+        }
+
+        return score;
+    }
+
+    private List<(int Row, int Col)> GetValidMoves(int row, int col)
+    {
+        var moves = new List<(int Row, int Col)>();
+
+        // Check adjacent squares (for duplication)
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue;
+
+                int newRow = row + r;
+                int newCol = col + c;
+
+                if (IsValidPosition(newRow, newCol) && board[newRow, newCol] == 0)
+                {
+                    moves.Add((newRow, newCol));
+                }
+            }
+        }
+
+        // Check jump squares (2 squares away)
+        for (int r = -2; r <= 2; r++)
+        {
+            for (int c = -2; c <= 2; c++)
+            {
+                if (Math.Abs(r) != 2 && Math.Abs(c) != 2) continue;
+
+                int newRow = row + r;
+                int newCol = col + c;
+
+                if (IsValidPosition(newRow, newCol) && board[newRow, newCol] == 0)
+                {
+                    moves.Add((newRow, newCol));
+                }
+            }
+        }
+
+        return moves;
+    }
+
+    private async Task MakeMove(int fromRow, int fromCol, int toRow, int toCol)
+    {
+        int distance = Math.Max(Math.Abs(toRow - fromRow), Math.Abs(toCol - fromCol));
+        bool capturesMade = false;
+        
+        await PlaySound("moveSound");
+        
+        if (distance == 1)
+        {
+            // Duplication move
+            board[toRow, toCol] = currentPlayer;
+            if (currentPlayer == 1) redPieces++;
+            else bluePieces++;
+        }
+        else
+        {
+            // Jump move
+            board[toRow, toCol] = currentPlayer;
+            board[fromRow, fromCol] = 0;
+        }
+
+        // Assimilate adjacent pieces
+        capturesMade = await AssimilateAdjacentPieces(toRow, toCol);
+
+        if (capturesMade)
+        {
+            await PlaySound(currentPlayer == 1 ? "captureSound1" : "captureSound2");
+        }
+    }
+
+    private async Task<bool> AssimilateAdjacentPieces(int row, int col)
+    {
+        bool capturesMade = false;
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue;
+
+                int newRow = row + r;
+                int newCol = col + c;
+
+                if (IsValidPosition(newRow, newCol) && 
+                    board[newRow, newCol] != 0 && 
+                    board[newRow, newCol] != currentPlayer)
+                {
+                    capturesMade = true;
+                    board[newRow, newCol] = currentPlayer;
+                    if (currentPlayer == 1)
+                    {
+                        redPieces++;
+                        bluePieces--;
+                    }
+                    else
+                    {
+                        bluePieces++;
+                        redPieces--;
+                    }
+                }
+            }
+        }
+        return capturesMade;
+    }
+
+    private bool IsValidPosition(int row, int col)
+    {
+        return row >= 0 && row < BoardSize && 
+               col >= 0 && col < BoardSize && 
+               board[row, col] != -1;  // Check for blocked squares
+    }
+
+    private bool IsValidMove(int row, int col)
+    {
+        return validMoves.Contains((row, col));
+    }
+
+    private async Task CheckGameOver()
+    {
+        if (redPieces == 0 || bluePieces == 0)
+        {
+            gameOver = true;
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
+            return;
+        }
+
+        bool hasEmptySpace = false;
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 0)
+                {
+                    hasEmptySpace = true;
+                    break;
+                }
+            }
+            if (hasEmptySpace) break;
+        }
+
+        if (!hasEmptySpace)
+        {
+            gameOver = true;
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
+        }
+    }
+
+    private async Task SaveLeaderboardEntry()
+    {
+        if (!gameOver) return;
+
+        var winner = redPieces > bluePieces ? 1 : 2;
+        var winningPieces = Math.Max(redPieces, bluePieces);
+
+        var entry = new LeaderboardEntry
+        {
+            Winner = winner,
+            PieceCount = winningPieces,
+            Date = DateTime.Now
+        };
+
+        leaderboard.Add(entry);
+        leaderboard = leaderboard
+            .OrderByDescending(e => e.PieceCount)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await SaveLeaderboard();
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "assimilation-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(leaderboard)
+        );
+    }
+
+    private async Task LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "assimilation-leaderboard"
+            );
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                leaderboard = System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) 
+                    ?? new List<LeaderboardEntry>();
+            }
+        }
+        catch
+        {
+            leaderboard = new List<LeaderboardEntry>();
+        }
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playSound", soundId);
+    }
+
+    private async Task LoadLevels()
+    {
+        try
+        {
+            var response = await Http.GetStringAsync("boards/levels.json");
+            levels = JsonSerializer.Deserialize<List<Level>>(response);
+        }
+        catch
+        {
+            levels = new List<Level>();
+        }
+    }
+}

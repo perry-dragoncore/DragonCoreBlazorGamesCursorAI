@@ -1,0 +1,564 @@
+.board {
+    display: grid;
+    grid-template-columns: repeat(8, 80px);
+    grid-template-rows: repeat(8, 80px);
+    gap: 0;
+    border: 2px solid #333;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    position: relative;
+    transition: transform 0.3s ease;
+}
+
+.board:hover {
+    transform: scale(1.01);
+}
+
+.square {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+}
+
+.square.light {
+    background-color: #f0d9b5;
+}
+
+.square.dark {
+    background-color: #b58863;
+}
+
+.square.valid-move::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: radial-gradient(circle, rgba(0,255,0,0.3) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: validMovePulse 1.5s infinite;
+}
+
+.square.selected {
+    background-color: rgba(0, 255, 0, 0.2);
+}
+
+.piece {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.piece::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+    animation: shimmer 3s infinite linear;
+}
+
+.piece.red {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+}
+
+.piece.blue {
+    background: linear-gradient(135deg, #4444ff, #0000cc);
+}
+
+.square:hover .piece {
+    transform: scale(1.1);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+}
+
+.square.selected .piece {
+    animation: selectedPulse 1.5s infinite;
+    box-shadow: 0 0 15px var(--player-color);
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.2); opacity: 0.3; }
+    100% { transform: scale(1); opacity: 0.6; }
+}
+
+.ai-thinking {
+    animation: thinking 1.5s infinite;
+}
+
+@keyframes thinking {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.leaderboard {
+    margin-top: 30px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.leaderboard table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.leaderboard th,
+.leaderboard td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.leaderboard th {
+    background-color: #2c3e50;
+    color: white;
+    font-weight: bold;
+}
+
+.leaderboard tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.leaderboard tr:hover {
+    background-color: #e9ecef;
+}
+
+.piece.mini {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.game-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.level-select {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 2px solid #4CAF50;
+    background: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.level-select:hover {
+    border-color: #45a049;
+    box-shadow: 0 0 10px rgba(76,175,80,0.3);
+}
+
+.level-select:focus {
+    outline: none;
+    border-color: #45a049;
+    box-shadow: 0 0 15px rgba(76,175,80,0.5);
+}
+
+.square.blocked {
+    background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 215, 0, 0.3),
+        rgba(255, 215, 0, 0.3) 10px,
+        rgba(0, 0, 0, 0.3) 10px,
+        rgba(0, 0, 0, 0.3) 20px
+    );
+    position: relative;
+    overflow: hidden;
+}
+
+.square.blocked::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
+    animation: shine 3s infinite;
+}
+
+.player-info {
+    padding: 15px 25px;
+    border-radius: 8px;
+    background: #f0f0f0;
+    transition: all 0.3s ease;
+    border: 3px solid transparent;
+    opacity: 0.7;
+    transform: scale(0.95);
+    position: relative;
+    overflow: hidden;
+}
+
+.player-info.active {
+    background: var(--player-color);
+    color: white;
+    transform: scale(1.1);
+    opacity: 1;
+    border: 3px solid #ffd700;
+    box-shadow: 0 0 15px rgba(0,0,0,0.2),
+                0 0 30px var(--player-color);
+    animation: activePulse 2s infinite;
+}
+
+.player-info.active::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+    animation: rotate 3s infinite linear;
+}
+
+.player-label {
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.piece-count {
+    margin-left: 15px;
+    font-size: 1.4em;
+    font-weight: bold;
+}
+
+/* Add a pulsing effect for the active player */
+.player-info.active {
+    animation: activePulse 2s infinite;
+}
+
+@keyframes activePulse {
+    0% { box-shadow: 0 0 15px rgba(0,0,0,0.2), 0 0 30px var(--player-color); }
+    50% { box-shadow: 0 0 20px rgba(0,0,0,0.3), 0 0 40px var(--player-color); }
+    100% { box-shadow: 0 0 15px rgba(0,0,0,0.2), 0 0 30px var(--player-color); }
+}
+
+/* Make inactive player more subdued */
+.player-info:not(.active) {
+    background: #e0e0e0;
+    color: #666;
+}
+
+/* Add particle effect for captures */
+.particle {
+    position: absolute;
+    pointer-events: none;
+    animation: particleAnim 0.5s ease-out forwards;
+}
+
+@keyframes particleAnim {
+    0% { transform: scale(1) rotate(0deg); opacity: 1; }
+    100% { transform: scale(0) rotate(360deg); opacity: 0; }
+}
+
+/* Enhanced piece animations */
+.piece {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.piece::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+    animation: shimmer 3s infinite linear;
+}
+
+.piece.red {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+}
+
+.piece.blue {
+    background: linear-gradient(135deg, #4444ff, #0000cc);
+}
+
+/* Piece hover effect */
+.square:hover .piece {
+    transform: scale(1.1);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+}
+
+/* Selected piece effect */
+.square.selected .piece {
+    animation: selectedPulse 1.5s infinite;
+    box-shadow: 0 0 15px var(--player-color);
+}
+
+/* Valid move indicator animation */
+.square.valid-move::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: radial-gradient(circle, rgba(0,255,0,0.3) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: validMovePulse 1.5s infinite;
+}
+
+/* Board hover effect */
+.board {
+    position: relative;
+    transition: transform 0.3s ease;
+}
+
+.board:hover {
+    transform: scale(1.01);
+}
+
+/* Enhanced blocked square style */
+.square.blocked {
+    background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 215, 0, 0.3),
+        rgba(255, 215, 0, 0.3) 10px,
+        rgba(0, 0, 0, 0.3) 10px,
+        rgba(0, 0, 0, 0.3) 20px
+    );
+    position: relative;
+    overflow: hidden;
+}
+
+.square.blocked::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
+    animation: shine 3s infinite;
+}
+
+/* Game over overlay animation */
+.game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    border: 3px solid var(--player-color);
+    animation: slideIn 0.5s ease-out;
+    z-index: 1000;
+    min-width: 300px;
+}
+
+.game-over h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 2em;
+}
+
+.game-over p {
+    color: var(--player-color);
+    font-size: 1.5em;
+    margin-bottom: 25px;
+    font-weight: bold;
+}
+
+.game-over .game-btn {
+    padding: 12px 30px;
+    font-size: 1.2em;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.game-over .game-btn:hover {
+    background: #45a049;
+    transform: scale(1.05);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translate(-50%, -60%);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, -50%);
+        opacity: 1;
+    }
+}
+
+/* Animation keyframes */
+@keyframes selectedPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes validMovePulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.2); opacity: 0.3; }
+    100% { transform: scale(1); opacity: 0.6; }
+}
+
+@keyframes shimmer {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes shine {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Enhanced player info animations */
+.player-info {
+    padding: 15px 25px;
+    border-radius: 8px;
+    background: #f0f0f0;
+    transition: all 0.3s ease;
+    border: 3px solid transparent;
+    opacity: 0.7;
+    transform: scale(0.95);
+    position: relative;
+    overflow: hidden;
+}
+
+.player-info.active {
+    background: var(--player-color);
+    color: white;
+    transform: scale(1.1);
+    opacity: 1;
+    border: 3px solid #ffd700;
+    box-shadow: 0 0 15px rgba(0,0,0,0.2),
+                0 0 30px var(--player-color);
+    animation: activePulse 2s infinite;
+}
+
+.player-info.active::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+    animation: rotate 3s infinite linear;
+}
+
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes activePulse {
+    0% { box-shadow: 0 0 15px rgba(0,0,0,0.2), 0 0 30px var(--player-color); }
+    50% { box-shadow: 0 0 20px rgba(0,0,0,0.3), 0 0 40px var(--player-color); }
+    100% { box-shadow: 0 0 15px rgba(0,0,0,0.2), 0 0 30px var(--player-color); }
+}
+
+/* Level select styling */
+.level-select {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 2px solid #4CAF50;
+    background: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.level-select:hover {
+    border-color: #45a049;
+    box-shadow: 0 0 10px rgba(76,175,80,0.3);
+}
+
+.level-select:focus {
+    outline: none;
+    border-color: #45a049;
+    box-shadow: 0 0 15px rgba(76,175,80,0.5);
+}
+
+/* Game button enhancement */
+.game-btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    border: none;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.game-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+.game-btn:active {
+    transform: translateY(0);
+}
+
+.game-btn::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.game-btn:hover::after {
+    opacity: 1;
+}
