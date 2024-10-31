@@ -1,0 +1,241 @@
+@page "/mindweb"
+@using Microsoft.JSInterop
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+
+<link href="css/mindweb.css" rel="stylesheet" />
+
+<div class="game-title">
+    <i class="fas fa-chess-board"></i>
+    <h1>MindWeb</h1>
+</div>
+
+<div class="game-container">
+    <div class="game-header">
+        <div class="game-controls">
+            <button class="game-btn" @onclick="RestartGame">New Game</button>
+            <select class="level-select" @bind="selectedLevelId">
+                @foreach (var level in levels)
+                {
+                    <option value="@level.Id">@level.Name</option>
+                }
+            </select>
+        </div>
+        <div class="player-info @(currentPlayer == 1 ? "active" : "")" style="--player-color: #ff4444;">
+            <span class="player-label">Red</span>
+            <span class="piece-count">@redPieces</span>
+        </div>
+        <div class="player-info @(currentPlayer == 2 ? "active" : "")" style="--player-color: #4444ff;">
+            <span class="player-label">Blue</span>
+            <span class="piece-count">@bluePieces</span>
+        </div>
+    </div>
+
+    <div class="board">
+        @for (int row = 0; row < 8; row++)
+        {
+            @for (int col = 0; col < 8; col++)
+            {
+                var r = row;
+                var c = col;
+                <div class="square @((row + col) % 2 == 0 ? "light" : "dark")"
+                     @onclick="() => HandleSquareClick(r, c)">
+                    @if (board[row, col] > 0)
+                    {
+                        <div class="piece stage-@stage[row, col] @(board[row, col] == 1 ? "red" : "blue")"></div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (gameOver)
+    {
+        <div class="game-over">
+            <h2>Game Over!</h2>
+            @if (redPieces > bluePieces)
+            {
+                <p>Red Wins!</p>
+            }
+            else if (bluePieces > redPieces)
+            {
+                <p>Blue Wins!</p>
+            }
+            else
+            {
+                <p>It's a Tie!</p>
+            }
+            <button class="game-btn" @onclick="RestartGame">Play Again</button>
+        </div>
+    }
+</div>
+
+@code {
+    private const int BoardSize = 8;
+    private int[,] board = new int[BoardSize, BoardSize]; // 0 = empty, 1 = Red, 2 = Blue
+    private int[,] stage = new int[BoardSize, BoardSize]; // 0 = stage 1, 1 = stage 2, 2 = stage 3, 3 = exploded
+
+     private int currentPlayer = 1; // 1 = Red, 2 = Blue
+    private int redPieces = 0;
+    private int bluePieces = 0;
+    private bool gameOver = false;
+    private string selectedLevelId = "1";
+
+    private class Level
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string data { get; set; }
+    }
+
+    private List<Level> levels = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLevels();
+        await NewGame();
+    }
+
+    private async Task RestartGame()
+    {
+        await NewGame();
+    }
+
+    private async Task NewGame()
+    {
+        board = new int[BoardSize, BoardSize];
+        stage = new int[BoardSize, BoardSize];
+        var level = levels.FirstOrDefault(l => l.Id == selectedLevelId);
+        if (level != null)
+        {
+            LoadLevel(level);
+        }
+        else
+        {
+            // Default piece placement if no level loaded
+            board[0, 0] = 1; // Red piece
+            board[7, 7] = 1; // Red piece
+            board[0, 7] = 2; // Blue piece
+            board[7, 0] = 2; // Blue piece
+            stage[0, 0] = 1; // Red piece
+            stage[7, 7] = 1; // Red piece
+            stage[0, 7] = 1; // Blue piece
+            stage[7, 0] = 1; // Blue piece
+        }
+
+        CountPieces();
+        gameOver = false;
+    }
+
+    private void LoadLevel(Level level)
+    {
+        for (int i = 0; i < level.data.Length; i++)
+        {
+            int row = i / BoardSize;
+            int col = i % BoardSize;
+            board[row, col] = level.data[i] == 'X' ? 1 : level.data[i] == 'O' ? 2 : 0;
+            stage[row, col] = 1;
+        }
+    }
+
+    private void CountPieces()
+    {
+        redPieces = 0;
+        bluePieces = 0;
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 1) redPieces++;
+                else if (board[row, col] == 2) bluePieces++;
+            }
+        }
+    }
+
+    private async Task HandleSquareClick(int row, int col)
+    {
+        if (gameOver) return;
+
+        if (board[row, col] == currentPlayer) // Click on own piece
+        {
+            // Advance the stage of the piece
+            if (stage[row, col] < 3)
+            {
+                stage[row, col]++;
+            }
+            else // If it's already at stage 3, explode
+            {
+                await ExplodePiece(row, col);
+            }
+            // Check for game over condition
+            await CheckGameOver();
+            currentPlayer = currentPlayer == 1 ? 2 : 1; // Switch player
+            CountPieces();
+        }
+    }
+
+    private async Task ExplodePiece(int row, int col)
+    {
+        stage[row, col] = 1; // Reset to stage 1
+        // Change adjacent squares
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue; // Skip the piece itself
+                int newRow = row + r;
+                int newCol = col + c;
+
+                if (IsValidPosition(newRow, newCol))
+                {
+                    if(board[newRow, newCol] != currentPlayer) 
+                    { // Change to current player's piece
+                        if(board[newRow, newCol] == 0) {
+                            stage[newRow, newCol] = 1;
+                        }else{
+                        //automatically take the piece
+                        if (stage[newRow, newCol] < 3)
+                        {
+                            stage[newRow, newCol]++;
+                        }
+                        else // If it's already at stage 3, explode
+                        {
+                            //await ExplodePiece(newRow, newCol);
+                            //await Task.Delay(200); // Delay for effect
+                        }
+                        }
+                    }
+
+                    board[newRow, newCol] = currentPlayer; // Change to current player's piece
+
+                    //check if this has a domino effect of explosions
+                    //await CheckForExplosions(newRow, newCol);
+                }
+            }
+        }
+    }
+
+    private bool IsValidPosition(int row, int col)
+    {
+        return row >= 0 && row < BoardSize && col >= 0 && col < BoardSize;
+    }
+
+    private async Task CheckGameOver()
+    {
+        // Implement game over logic if needed
+    }
+
+    private async Task LoadLevels()
+    {
+        try
+        {
+            var response = await Http.GetStringAsync("boards/levels.json");
+            levels = JsonSerializer.Deserialize<List<Level>>(response);
+        }
+        catch
+        {
+            levels = new List<Level>();
+        }
+    }
+} 

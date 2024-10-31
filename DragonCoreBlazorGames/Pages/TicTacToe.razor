@@ -1,92 +1,139 @@
 ﻿@page "/tictactoe"
 @inject IJSRuntime JSRuntime
-<link href="css/tictactoe.css" rel="stylesheet" />
+@inject NavigationManager NavigationManager
+@implements IAsyncDisposable
 
+<link href="css/tictactoe.css" rel="stylesheet" />
 
 <div class="game-title">
     <i class="fas fa-times-circle"></i>
     <h1>Tic Tac Toe</h1>
 </div>
 
-<audio id="moveSound" preload="auto">
-    <source src="sounds/move.mp3" type="audio/mpeg">
-</audio>
-<audio id="winSound" preload="auto">
-    <source src="sounds/win.mp3" type="audio/mpeg">
-</audio>
-
-<div class="game-container">
-    <div class="game-header">
-        <button @onclick="Reset" class="new-game-btn">New Game</button>
-        @if (Winner == "Draw")
+@if (!gameStarted)
+{
+    <div class="game-mode-selection">
+        <h2>Choose Game Mode</h2>
+        <div class="mode-buttons">
+            <button class="mode-btn" @onclick="() => StartGame(GameMode.AI)">
+                <i class="fas fa-robot"></i>
+                Play vs AI
+            </button>
+            <button class="mode-btn" @onclick="() => StartGame(GameMode.Online)">
+                <i class="fas fa-users"></i>
+                Play Online
+            </button>
+        </div>
+    </div>
+}
+else if (isOnlineMode && !isInGame)
+{
+    <div class="online-setup">
+        @if (string.IsNullOrEmpty(gameId))
         {
-            <div class="draw-message">Game Draw!</div>
+            <button class="create-game-btn" @onclick="CreateGame">Create New Game</button>
         }
         else
         {
-            <div class="player-info @(CurrentPlayer == 0 ? "active" : "")">
-                <img src="/images/X.png" class="player-icon" />
-                <span>Player 1</span>
+            <div class="game-code-display">
+                <h3>Share this code with your friend:</h3>
+                <div class="game-code">@gameId</div>
+                <button class="copy-btn" @onclick="CopyGameCode">
+                    <i class="fas fa-copy"></i> Copy Code
+                </button>
             </div>
-            <div class="player-info @(CurrentPlayer == 1 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")">
-                <img src="/images/O.png" class="player-icon" />
-                <span>Computer AI</span>
-            </div>
-        }
-    </div>
-
-    <div class="board">
-        @for (int i = 0; i < 9; i++)
-        {
-            int index = i;
-            <div class="cell @(winningCells.Contains(index) ? "winning" : "")" 
-                 @onclick="() => OnCellClicked(index)">
-                @if (Board[index] != null)
-                {
-                    <img src="@Board[index]" class="@(winningCells.Contains(index) ? "winning-piece" : "")" />
-                }
+            <div class="join-game">
+                <input @bind="joinCode" placeholder="Enter game code" />
+                <button class="join-btn" @onclick="JoinGame">Join Game</button>
             </div>
         }
     </div>
+}
+else
+{
+    <div class="game-container">
+        <div class="game-header">
+            <button @onclick="Reset" class="new-game-btn">New Game</button>
+            @if (Winner == "Draw")
+            {
+                <div class="draw-message">Game Draw!</div>
+            }
+            else
+            {
+                <div class="player-info @(CurrentPlayer == 0 ? "active" : "")">
+                    <img src="/images/X.png" class="player-icon" />
+                    <span>Player 1</span>
+                </div>
+                <div class="player-info @(CurrentPlayer == 1 ? "active" : "") @(isAIThinking ? "ai-thinking" : "")">
+                    <img src="/images/O.png" class="player-icon" />
+                    <span>Computer AI</span>
+                </div>
+            }
+        </div>
 
-    <div class="leaderboard">
-        <h2>Top Winners</h2>
-        @if (!leaderboard.Any())
-        {
-            <p>No records yet. Play to make history!</p>
-        }
-        else
-        {
-            <table>
-                <thead>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Winner</th>
-                        <th>Moves</th>
-                        <th>Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (int i = 0; i < leaderboard.Count; i++)
+        <div class="board">
+            @for (int i = 0; i < 9; i++)
+            {
+                int index = i;
+                <div class="cell @(winningCells.Contains(index) ? "winning" : "")" 
+                     @onclick="() => OnCellClicked(index)">
+                    @if (Board[index] != null)
                     {
-                        var entry = leaderboard[i];
-                        <tr>
-                            <td>#@(i + 1)</td>
-                            <td>
-                                <img src="/images/@(entry.Winner == 0 ? "X" : "O").png" 
-                                     class="leaderboard-icon" /> Player @(entry.Winner + 1)
-                            </td>
-                            <td>@entry.Moves</td>
-                            <td>@entry.Date.ToShortDateString()</td>
-                        </tr>
+                        <img src="@Board[index]" class="@(winningCells.Contains(index) ? "winning-piece" : "")" />
                     }
-                </tbody>
-            </table>
-        }
+                </div>
+            }
+        </div>
+
+        <div class="leaderboard">
+            <h2>Top Winners</h2>
+            @if (!leaderboard.Any())
+            {
+                <p>No records yet. Play to make history!</p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Winner</th>
+                            <th>Moves</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < leaderboard.Count; i++)
+                        {
+                            var entry = leaderboard[i];
+                            <tr>
+                                <td>#@(i + 1)</td>
+                                <td>
+                                    <img src="/images/@(entry.Winner == 0 ? "X" : "O").png" 
+                                         class="leaderboard-icon" /> Player @(entry.Winner + 1)
+                                </td>
+                                <td>@entry.Moves</td>
+                                <td>@entry.Date.ToShortDateString()</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
     </div>
-</div>
+}
 
 @code {
+    private enum GameMode { AI, Online }
+    private bool gameStarted = false;
+    private bool isOnlineMode = false;
+    private bool isInGame = false;
+    private string gameId;
+    private string joinCode;
+    //private HubConnection hubConnection;
+    private string playerSymbol;
+    private bool isMyTurn;
+
     private string[] Players = new[] { "Player 1", "Computer AI" };
     private string[] Symbols = new[] { "/images/X.png", "/images/O.png" };
     private int CurrentPlayer = 0;
@@ -113,33 +160,44 @@
 
     private async Task OnCellClicked(int index)
     {
-        if (CurrentPlayer == 1 || Board[index] != null || Winner != null) return;
+        if (Board[index] != null || Winner != null) return;
 
-        moveCount++;
-        Board[index] = Symbols[CurrentPlayer];
-        await PlaySound("moveSound");
-
-        if (CheckWinner(Symbols[CurrentPlayer]))
+        if (isOnlineMode)
         {
-            Winner = Players[CurrentPlayer];
-            await PlaySound("winSound");
-            await SaveLeaderboardEntry();
-            return;
+            if (!isMyTurn) return;
+
+//            await hubConnection.SendAsync("MakeMove", gameId, index);
+            await OnOnlineMoveMade(index);
+            isMyTurn = false;
         }
-        else if (IsDraw())
+        else
         {
-            Winner = "Draw";
-            return;
+            moveCount++;
+            Board[index] = Symbols[CurrentPlayer];
+            await PlaySound("moveSound");
+
+            if (CheckWinner(Symbols[CurrentPlayer]))
+            {
+                Winner = Players[CurrentPlayer];
+                await PlaySound("winSound");
+                await SaveLeaderboardEntry();
+                return;
+            }
+            else if (IsDraw())
+            {
+                Winner = "Draw";
+                return;
+            }
+
+            CurrentPlayer = 1;
+            isAIThinking = true;
+            StateHasChanged();
+
+            await Task.Delay(500);
+            await MakeAIMove();
+
+            isAIThinking = false;
         }
-
-        CurrentPlayer = 1;
-        isAIThinking = true;
-        StateHasChanged();
-
-        await Task.Delay(500);
-        await MakeAIMove();
-
-        isAIThinking = false;
     }
 
     private async Task MakeAIMove()
@@ -334,5 +392,105 @@
             return false;
 
         return !Board.Any(cell => cell == null);
+    }
+
+    private async Task StartGame(GameMode mode)
+    {
+        isOnlineMode = mode == GameMode.Online;
+        
+        if (isOnlineMode)
+        {
+    //        await InitializeSignalR();
+        }
+        else
+        {
+            gameStarted = true;
+            await Reset();
+        }
+    }
+/*
+    private async Task InitializeSignalR()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl($"{NavigationManager.BaseUri}tictactoehub")
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<int>("MoveMade", async (position) =>
+        {
+            if (!isMyTurn)
+            {
+                await InvokeAsync(async () =>
+                {
+                    await OnOnlineMoveMade(position);
+                    isMyTurn = true;
+                    StateHasChanged();
+                });
+            }
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error starting SignalR: {ex.Message}");
+        }
+    }
+*/
+    private async Task CreateGame()
+    {
+        gameId = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper();
+  //      await hubConnection.SendAsync("JoinGame", gameId);
+        playerSymbol = "X";
+        isMyTurn = true;
+    }
+
+    private async Task JoinGame()
+    {
+        if (!string.IsNullOrEmpty(joinCode))
+        {
+            //await hubConnection.SendAsync("JoinGame", joinCode);
+            gameId = joinCode;
+            playerSymbol = "O";
+            isMyTurn = false;
+            isInGame = true;
+            gameStarted = true;
+            await Reset();
+        }
+    }
+
+    private async Task CopyGameCode()
+    {
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", gameId);
+    }
+
+    private async Task OnOnlineMoveMade(int index)
+    {
+        moveCount++;
+        Board[index] = isMyTurn ? playerSymbol : (playerSymbol == "X" ? "O" : "X");
+        await PlaySound("moveSound");
+
+        if (CheckWinner(Board[index]))
+        {
+            Winner = isMyTurn ? "You" : "Opponent";
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
+        }
+        else if (IsDraw())
+        {
+            Winner = "Draw";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        /*
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+        */
     }
 }

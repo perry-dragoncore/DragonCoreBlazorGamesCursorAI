@@ -32,6 +32,9 @@
 <audio id="menuSound" preload="auto">
     <source src="sounds/menu.mp3" type="audio/mpeg">
 </audio>
+<audio id="bombSound1" preload="auto">
+    <source src="sounds/bomb.mp3" type="audio/mpeg">
+</audio>
 
 <div class="game-container">
     <div class="game-header">
@@ -69,6 +72,10 @@
                     @if (board[row, col] > 0)
                     {
                         <div class="piece @(board[row, col] == 1 ? "red" : "blue")"></div>
+                    }
+                    @if (bombs.Contains((r, c)))
+                    {
+                        <i class="fas fa-bomb bomb-icon"></i> <!-- Add bomb icon -->
                     }
                 </div>
             }
@@ -143,6 +150,7 @@
     private List<(int Row, int Col)> validMoves = new();
     private bool isAIThinking = false;
     private Random random = new Random();
+    private List<(int Row, int Col)> bombs = new(); // List to hold bomb positions
 
     private class LeaderboardEntry
     {
@@ -205,6 +213,9 @@
         gameOver = false;
         selectedPiece = null;
         validMoves.Clear();
+        
+        // Place bombs randomly
+        PlaceBombs(3); // Place 3 bombs
     }
 
     private void LoadLevel(Level level)
@@ -266,16 +277,63 @@
 
         if (selectedPiece.HasValue && validMoves.Contains((row, col)))
         {
+            // Move the piece to the selected square
             await PlaySound("moveSound");
             await MakeMove(selectedPiece.Value.Row, selectedPiece.Value.Col, row, col);
+            StateHasChanged();
+
+            // Check if the new square is a bomb
+            if (bombs.Contains((row, col)))
+            {
+                await Task.Delay(250); // Delay for effect
+                await PlaySound("bombSound1"); // Play bomb sound
+                await Task.Delay(500); // Delay for effect
+                await HandleBombExplosion(row, col);
+            }else {
+
+                // Assimilate adjacent pieces
+                var capturesMade = await AssimilateAdjacentPieces(row, col);
+
+                if (capturesMade)
+                {
+                    await PlaySound(currentPlayer == 1 ? "captureSound1" : "captureSound2");
+                }
+
+            }
+
             selectedPiece = null;
             validMoves.Clear();
-            
+
+            // Proceed to the next player's turn
             if (!gameOver)
             {
-                currentPlayer = 2;
+                currentPlayer = 2; // Switch to AI's turn
                 await MakeAIMove();
             }
+        }
+    }
+
+    private async Task HandleBombExplosion(int row, int col)
+    {
+        // Mark the bomb square as blocked
+        board[row, col] = -1; // Set the square to blocked
+
+        // Remove the player's piece
+        if (currentPlayer == 1)
+        {
+            redPieces--;
+        }
+        else
+        {
+            bluePieces--;
+        }
+
+        // Check for game over
+        if (redPieces <= 0 || bluePieces <= 0)
+        {
+            gameOver = true;
+            await PlaySound("winSound");
+            await SaveLeaderboardEntry();
         }
     }
 
@@ -292,7 +350,30 @@
             await Task.Delay(300);
             await MakeMove(bestMove.Value.FromRow, bestMove.Value.FromCol, 
                     bestMove.Value.ToRow, bestMove.Value.ToCol);
+            StateHasChanged();
+
+            // Check if the new square is a bomb
+            if (bombs.Contains((bestMove.Value.ToRow, bestMove.Value.ToCol)))
+            {
+                await Task.Delay(250); // Delay for effect
+                await PlaySound("bombSound1"); // Play bomb sound
+                await Task.Delay(500); // Delay for effect
+                await HandleBombExplosion(bestMove.Value.ToRow, bestMove.Value.ToCol);
+            }
+            else
+            {
+                // Assimilate adjacent pieces
+                var capturesMade = await AssimilateAdjacentPieces(bestMove.Value.ToRow, bestMove.Value.ToCol);
+
+                if (capturesMade)
+                {
+                    await PlaySound(currentPlayer == 1 ? "captureSound1" : "captureSound2");
+                }
+
+            }
         }
+        selectedPiece = null;
+        validMoves.Clear();
 
         currentPlayer = 1;
         isAIThinking = false;
@@ -397,19 +478,19 @@
             }
         }
 
-        // Check jump squares (2 squares away)
         for (int r = -2; r <= 2; r++)
         {
             for (int c = -2; c <= 2; c++)
             {
-                if (Math.Abs(r) != 2 && Math.Abs(c) != 2) continue;
+                if (Math.Abs(r) + Math.Abs(c) == 2 || (Math.Abs(r) == 2 && Math.Abs(c) == 2)) 
+            {
+                    int newRow = row + r;
+                    int newCol = col + c;
 
-                int newRow = row + r;
-                int newCol = col + c;
-
-                if (IsValidPosition(newRow, newCol) && board[newRow, newCol] == 0)
-                {
-                    moves.Add((newRow, newCol));
+                    if (IsValidPosition(newRow, newCol) && board[newRow, newCol] == 0)
+                    {
+                        moves.Add((newRow, newCol));
+                    }
                 }
             }
         }
@@ -420,7 +501,7 @@
     private async Task MakeMove(int fromRow, int fromCol, int toRow, int toCol)
     {
         int distance = Math.Max(Math.Abs(toRow - fromRow), Math.Abs(toCol - fromCol));
-        bool capturesMade = false;
+//        bool capturesMade = false;
         
         await PlaySound("moveSound");
         
@@ -436,14 +517,6 @@
             // Jump move
             board[toRow, toCol] = currentPlayer;
             board[fromRow, fromCol] = 0;
-        }
-
-        // Assimilate adjacent pieces
-        capturesMade = await AssimilateAdjacentPieces(toRow, toCol);
-
-        if (capturesMade)
-        {
-            await PlaySound(currentPlayer == 1 ? "captureSound1" : "captureSound2");
         }
     }
 
@@ -595,4 +668,34 @@
             levels = new List<Level>();
         }
     }
+
+    private void PlaceBombs(int bombCount)
+    {
+        bombs.Clear();
+        var openSquares = new List<(int Row, int Col)>();
+
+        // Collect all open squares
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 0) // Open square
+                {
+                    openSquares.Add((row, col));
+                }
+            }
+        }
+
+        // Randomly select bomb positions
+        for (int i = 0; i < bombCount; i++)
+        {
+            if (openSquares.Count == 0) break; // No more open squares
+
+            int index = random.Next(openSquares.Count);
+            bombs.Add(openSquares[index]);
+            openSquares.RemoveAt(index); // Remove to avoid placing another bomb in the same spot
+        }
+    }
 }
+
+
