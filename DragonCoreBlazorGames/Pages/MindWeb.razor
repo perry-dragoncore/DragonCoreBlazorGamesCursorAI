@@ -3,35 +3,34 @@
 @using System.Text.Json
 @inject IJSRuntime JSRuntime
 @inject HttpClient Http
+@implements IDisposable
 
 <link href="css/mindweb.css" rel="stylesheet" />
-
 <div class="game-title">
     <i class="fas fa-chess-board"></i>
     <h1>MindWeb</h1>
 </div>
-
 <div class="game-container">
-    <div class="game-header">
-        <div class="game-controls">
-            <button class="game-btn" @onclick="RestartGame">New Game</button>
-            <select class="level-select" @bind="selectedLevelId">
-                @foreach (var level in levels)
-                {
-                    <option value="@level.Id">@level.Name</option>
-                }
-            </select>
-        </div>
+    <div class="game-controls">
+        <button class="game-btn" @onclick="RestartGame">New Game</button>
+        <select class="level-select" @bind="selectedLevelId">
+            @foreach (var level in levels)
+            {
+                <option value="@level.Id">@level.Name</option>
+            }
+        </select>
         <div class="player-info @(currentPlayer == 1 ? "active" : "")" style="--player-color: #ff4444;">
             <span class="player-label">Red</span>
             <span class="piece-count">@redPieces</span>
         </div>
         <div class="player-info @(currentPlayer == 2 ? "active" : "")" style="--player-color: #4444ff;">
-            <span class="player-label">Blue</span>
+            <span class="player-label">Blue (AI)</span>
             <span class="piece-count">@bluePieces</span>
         </div>
+        <div class="timer">
+            <span>Time: @($"{gameTime / 60}:{gameTime % 60:00}")</span>
+        </div>
     </div>
-
     <div class="board">
         @for (int row = 0; row < 8; row++)
         {
@@ -49,7 +48,6 @@
             }
         }
     </div>
-
     @if (gameOver)
     {
         <div class="game-over">
@@ -69,6 +67,40 @@
             <button class="game-btn" @onclick="RestartGame">Play Again</button>
         </div>
     }
+    <div class="leaderboard">
+        <h2>Leaderboard</h2>
+        @if (!leaderboard.Any())
+        {
+            <p>No records yet. Be the first!</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Winner</th>
+                        <th>Pieces</th>
+                        <th>Time</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < leaderboard.Count; i++)
+                    {
+                        var entry = leaderboard[i];
+                        <tr>
+                            <td>#@(i + 1)</td>
+                            <td>@(entry.Winner == 1 ? "Red" : "Blue")</td>
+                            <td>@entry.PieceCount</td>
+                            <td>@($"{entry.Time / 60}:{entry.Time % 60:00}")</td>
+                            <td>@entry.Date.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
 </div>
 
 @code {
@@ -76,11 +108,24 @@
     private int[,] board = new int[BoardSize, BoardSize]; // 0 = empty, 1 = Red, 2 = Blue
     private int[,] stage = new int[BoardSize, BoardSize]; // 0 = stage 1, 1 = stage 2, 2 = stage 3, 3 = exploded
 
-     private int currentPlayer = 1; // 1 = Red, 2 = Blue
+    private int currentPlayer = 1; // 1 = Red, 2 = Blue (AI)
     private int redPieces = 0;
     private int bluePieces = 0;
     private bool gameOver = false;
     private string selectedLevelId = "1";
+    private int gameTime = 0; // Timer for the game
+    private System.Timers.Timer timer; // Timer object
+
+    private class LeaderboardEntry
+    {
+        public int Winner { get; set; }
+        public int PieceCount { get; set; }
+        public int Time { get; set; } // Time in seconds
+        public DateTime Date { get; set; }
+    }
+
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
 
     private class Level
     {
@@ -91,9 +136,12 @@
 
     private List<Level> levels = new();
 
+    private const int MaxGameTimeInSeconds = 300; // 5 minutes
+
     protected override async Task OnInitializedAsync()
     {
         await LoadLevels();
+        await LoadLeaderboard(); // Load leaderboard from local storage
         await NewGame();
     }
 
@@ -106,6 +154,9 @@
     {
         board = new int[BoardSize, BoardSize];
         stage = new int[BoardSize, BoardSize];
+        gameTime = 0; // Reset timer
+        StartTimer(); // Start the timer
+
         var level = levels.FirstOrDefault(l => l.Id == selectedLevelId);
         if (level != null)
         {
@@ -126,6 +177,36 @@
 
         CountPieces();
         gameOver = false;
+
+        // Start AI turn if it's Player 2's turn
+        if (currentPlayer == 2)
+        {
+            await MakeAIMove();
+        }
+    }
+
+    private void StartTimer()
+    {
+        if (timer != null)
+        {
+            timer.Stop();
+            timer.Dispose();
+        }
+
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += async (sender, e) =>
+        {
+            gameTime++;
+            if (gameTime >= MaxGameTimeInSeconds)
+            {
+                await InvokeAsync(async () =>
+                {
+                    await CheckGameOver();
+                });
+            }
+            await InvokeAsync(StateHasChanged);
+        };
+        timer.Start();
     }
 
     private void LoadLevel(Level level)
@@ -155,9 +236,9 @@
 
     private async Task HandleSquareClick(int row, int col)
     {
-        if (gameOver) return;
+        if (gameOver || currentPlayer != 1) return; // Prevent moves if game is over or it's AI's turn
 
-        if (board[row, col] == currentPlayer) // Click on own piece
+        if (board[row, col] == currentPlayer)
         {
             // Advance the stage of the piece
             if (stage[row, col] < 3)
@@ -168,11 +249,175 @@
             {
                 await ExplodePiece(row, col);
             }
-            // Check for game over condition
-            await CheckGameOver();
-            currentPlayer = currentPlayer == 1 ? 2 : 1; // Switch player
-            CountPieces();
+
+            CountPieces(); // Update piece counts
+            await CheckGameOver(); // Check if game is over
+
+            if (!gameOver) // Only continue if game isn't over
+            {
+                currentPlayer = 2; // Switch to AI
+                StateHasChanged();
+                await MakeAIMove();
+            }
         }
+    }
+
+    private async Task MakeAIMove()
+    {
+        if (gameOver) return;
+
+        await Task.Delay(500); // Thinking delay
+
+        var possibleMoves = new List<(int Row, int Col, int Score)>();
+        
+        // Evaluate all possible moves
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 2) // AI piece
+                {
+                    int score = EvaluateMove(row, col);
+                    possibleMoves.Add((row, col, score));
+                }
+            }
+        }
+
+        if (!possibleMoves.Any())
+        {
+            await CheckGameOver();
+            return;
+        }
+
+        // Get the highest scoring moves
+        int maxScore = possibleMoves.Max(m => m.Score);
+        var bestMoves = possibleMoves.Where(m => m.Score >= maxScore - 1).ToList();
+
+        // Randomly select from the best moves
+        var random = new Random();
+        var selectedMove = bestMoves[random.Next(bestMoves.Count)];
+
+        // Execute the selected move
+        if (stage[selectedMove.Row, selectedMove.Col] == 3)
+        {
+            await ExplodePiece(selectedMove.Row, selectedMove.Col);
+        }
+        else
+        {
+            stage[selectedMove.Row, selectedMove.Col]++;
+        }
+
+        CountPieces();
+        await CheckGameOver();
+        
+        if (!gameOver)
+        {
+            currentPlayer = 1; // Switch back to player 1
+        }
+        StateHasChanged();
+    }
+
+    private int EvaluateMove(int row, int col)
+    {
+        int score = 0;
+        
+        // Prioritize pieces that are close to exploding
+        if (stage[row, col] == 3)
+        {
+            // Calculate how many pieces would be affected by explosion
+            score += CountExplosionBenefit(row, col) * 10;
+        }
+        else if (stage[row, col] == 2)
+        {
+            // Pieces that will become explosive next turn are valuable
+            score += 5;
+            // Check if exploding here next turn would be beneficial
+            score += CountExplosionBenefit(row, col) * 5;
+        }
+        else
+        {
+            score += 1;
+        }
+
+        // Strategic position bonuses
+        if (IsCorner(row, col)) score += 2;
+        if (IsEdge(row, col)) score += 1;
+        
+        // Consider surrounding pieces
+        score += EvaluateAdjacentPieces(row, col);
+
+        return score;
+    }
+
+    private int CountExplosionBenefit(int row, int col)
+    {
+        int benefit = 0;
+        
+        // Check all adjacent squares
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue;
+                
+                int newRow = row + r;
+                int newCol = col + c;
+                
+                if (IsValidPosition(newRow, newCol))
+                {
+                    if (board[newRow, newCol] == 1) // Enemy piece
+                    {
+                        benefit += 3; // Higher value for capturing enemy pieces
+                    }
+                    else if (board[newRow, newCol] == 0) // Empty space
+                    {
+                        benefit += 1; // Some value for expanding
+                    }
+                }
+            }
+        }
+        
+        return benefit;
+    }
+
+    private int EvaluateAdjacentPieces(int row, int col)
+    {
+        int score = 0;
+        
+        for (int r = -1; r <= 1; r++)
+        {
+            for (int c = -1; c <= 1; c++)
+            {
+                if (r == 0 && c == 0) continue;
+                
+                int newRow = row + r;
+                int newCol = col + c;
+                
+                if (IsValidPosition(newRow, newCol))
+                {
+                    if (board[newRow, newCol] == 1) // Enemy piece
+                    {
+                        score += 1; // Slight bonus for being near enemy pieces
+                    }
+                    else if (board[newRow, newCol] == 2) // Friendly piece
+                    {
+                        score += 2; // Bonus for clustering
+                    }
+                }
+            }
+        }
+        
+        return score;
+    }
+
+    private bool IsCorner(int row, int col)
+    {
+        return (row == 0 || row == BoardSize - 1) && (col == 0 || col == BoardSize - 1);
+    }
+
+    private bool IsEdge(int row, int col)
+    {
+        return row == 0 || row == BoardSize - 1 || col == 0 || col == BoardSize - 1;
     }
 
     private async Task ExplodePiece(int row, int col)
@@ -189,28 +434,23 @@
 
                 if (IsValidPosition(newRow, newCol))
                 {
-                    if(board[newRow, newCol] != currentPlayer) 
+                    if (board[newRow, newCol] != currentPlayer) 
                     { // Change to current player's piece
-                        if(board[newRow, newCol] == 0) {
+                        if (board[newRow, newCol] == 0) 
+                        {
                             stage[newRow, newCol] = 1;
-                        }else{
-                        //automatically take the piece
-                        if (stage[newRow, newCol] < 3)
-                        {
-                            stage[newRow, newCol]++;
                         }
-                        else // If it's already at stage 3, explode
+                        else
                         {
-                            //await ExplodePiece(newRow, newCol);
-                            //await Task.Delay(200); // Delay for effect
-                        }
+                            // Automatically take the piece
+                            if (stage[newRow, newCol] < 3)
+                            {
+                                stage[newRow, newCol]++;
+                            }
                         }
                     }
 
                     board[newRow, newCol] = currentPlayer; // Change to current player's piece
-
-                    //check if this has a domino effect of explosions
-                    //await CheckForExplosions(newRow, newCol);
                 }
             }
         }
@@ -223,7 +463,100 @@
 
     private async Task CheckGameOver()
     {
-        // Implement game over logic if needed
+        CountPieces(); // Make sure piece count is up to date
+
+        // Check all game over conditions
+        bool isGameOver = false;
+
+        // 1. Check if either player has no pieces
+        if (redPieces == 0 || bluePieces == 0)
+        {
+            isGameOver = true;
+        }
+
+        // 2. Check if there are no available squares
+        if (!HasAvailableSquares())
+        {
+            isGameOver = true;
+        }
+
+        // 3. Check if time limit is reached (5 minutes)
+        if (gameTime >= MaxGameTimeInSeconds)
+        {
+            isGameOver = true;
+        }
+
+        if (isGameOver && !gameOver) // Only trigger once
+        {
+            gameOver = true;
+            timer?.Stop(); // Stop the timer
+            await SaveLeaderboardEntry();
+            StateHasChanged(); // Force UI update
+        }
+    }
+
+    private bool HasAvailableSquares()
+    {
+        for (int row = 0; row < BoardSize; row++)
+        {
+            for (int col = 0; col < BoardSize; col++)
+            {
+                if (board[row, col] == 0) // Found an empty square
+                {
+                    return true;
+                }
+            }
+        }
+        return false; // No available squares left
+    }
+
+    private async Task SaveLeaderboardEntry()
+    {
+        if (!gameOver) return;
+
+        var winner = redPieces > bluePieces ? 1 : 2;
+        var winningPieces = Math.Max(redPieces, bluePieces);
+
+        var entry = new LeaderboardEntry
+        {
+            Winner = winner,
+            PieceCount = winningPieces,
+            Time = gameTime, // Save the time
+            Date = DateTime.Now
+        };
+
+        leaderboard.Add(entry);
+        leaderboard = leaderboard
+            .OrderByDescending(e => e.PieceCount)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await SaveLeaderboard();
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "mindweb-leaderboard",
+            System.Text.Json.JsonSerializer.Serialize(leaderboard)
+        );
+    }
+
+    private async Task LoadLeaderboard()
+    {
+        try
+        {
+            var data = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "mindweb-leaderboard");
+            if (!string.IsNullOrEmpty(data))
+            {
+                leaderboard = JsonSerializer.Deserialize<List<LeaderboardEntry>>(data) ?? new List<LeaderboardEntry>();
+            }
+        }
+        catch
+        {
+            leaderboard = new List<LeaderboardEntry>();
+        }
     }
 
     private async Task LoadLevels()
@@ -237,5 +570,11 @@
         {
             levels = new List<Level>();
         }
+    }
+
+    public void Dispose()
+    {
+        timer?.Stop();
+        timer?.Dispose();
     }
 } 
