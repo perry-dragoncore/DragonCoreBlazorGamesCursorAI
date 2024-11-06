@@ -1,0 +1,1534 @@
+@page "/dungeon"
+@using Microsoft.JSInterop
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<link href="css/dungeon.css" rel="stylesheet" />
+
+<div class="game-container">
+    <div class="game-content">
+        <div class="game-header">
+            <h1><i class="fas fa-dungeon"></i> Dragon's Dungeon</h1>
+            <div class="debug-controls">
+                <label>
+                    Item Chance (%):
+                    <input type="number" min="0" max="100" @bind="itemGenerationChance" />
+                </label>
+                <label>
+                    Items Per Room:
+                    <input type="number" min="1" max="10" @bind="itemsPerRoom" />
+                </label>
+            </div>
+            <div class="player-stats">
+                <div class="stat">
+                    <i class="fas fa-heart"></i> HP: @player.Health/@player.MaxHealth
+                </div>
+                <div class="stat">
+                    <i class="fas fa-coins"></i> Gold: @player.Gold
+                </div>
+                <div class="stat">
+                    <i class="fas fa-sword"></i> Weapon: @(player.EquippedWeapon?.Name ?? "None") @(GetItemBonus(player.EquippedWeapon))
+                </div>
+                <div class="stat">
+                    <i class="fas fa-shield"></i> Armor: @(player.EquippedArmor?.Name ?? "None") @(GetItemBonus(player.EquippedArmor))
+                </div>
+                <div class="stat">
+                    <i class="fas fa-dungeon"></i> Level: @currentLevel
+                </div>
+            </div>
+        </div>
+
+        <div class="game-board" tabindex="0" @onkeydown="HandleKeyPress" @ref="gameBoardRef">
+            @for (int y = 0; y < MapSize; y++)
+            {
+                @for (int x = 0; x < MapSize; x++)
+                {
+                    var tile = GetVisibleTile(x, y);
+                    <div class="tile @GetTileClass(tile)" style="grid-column: @(x + 1); grid-row: @(y + 1);">
+                        @if (tile != null && IsVisible(x, y))
+                        {
+                            @if (player.X == x && player.Y == y)
+                            {
+                                <i class="fas fa-user player"></i>
+                            }
+                            else if (tile.Monster != null)
+                            {
+                                <i class="fas fa-dragon monster"></i>
+                            }
+                            else if (tile.Item != null)
+                            {
+                                <i class="@GetItemIcon(tile.Item)"></i>
+                            }
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+    <div class="sidebar">
+        <div class="message-log">
+            <h3>Messages</h3>
+            <div class="message-container">
+                @foreach (var message in messages)
+                {
+                    <div class="message @message.Type.ToString().ToLower()">
+                        @message.Text
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="inventory">
+            <h3>Inventory</h3>
+            <div class="inventory-items">
+                @foreach (var item in GetSortedInventory())
+                {
+                    <div class="inventory-item @(IsItemEquipped(item) ? "equipped" : "")">
+                        <i class="@GetItemIcon(item)"></i>
+                        @item.Name @GetItemBonus(item)
+                        @if (IsItemEquipped(item))
+                        {
+                            <span class="equipped-tag">Equipped</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (gameOver)
+{
+    <div class="game-over">
+        <h2>Game Over!</h2>
+        @if (player.Health <= 0)
+        {
+            <div class="death-message">
+                <i class="fas fa-skull"></i>
+                <p>You have been slain!</p>
+                <p class="stats">
+                    Gold collected: @player.Gold<br/>
+                    Level reached: @currentLevel<br/>
+                    Time survived: @($"{gameTime / 60}:{gameTime % 60:00}")
+                </p>
+            </div>
+        }
+        else
+        {
+            <p>Game Complete!</p>
+        }
+        <div class="leaderboard">
+            <h3>Top Scores</h3>
+            @if (!leaderboard.Any())
+            {
+                <p>No records yet. Be the first!</p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Result</th>
+                            <th>Gold</th>
+                            <th>Level</th>
+                            <th>Time</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < leaderboard.Count; i++)
+                        {
+                            var entry = leaderboard[i];
+                            <tr>
+                                <td>#@(i + 1)</td>
+                                <td>@(entry.Victory ? "Victory" : "Defeated")</td>
+                                <td>@entry.Gold</td>
+                                <td>@entry.Level</td>
+                                <td>@($"{entry.Time / 60}:{entry.Time % 60:00}")</td>
+                                <td>@entry.Date.ToShortDateString()</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+        <button class="game-btn" @onclick="RestartGame">Try Again</button>
+    </div>
+}
+
+
+@code {
+    private const int MapSize = 64;
+    private const int ViewRadius = 2;
+    private ElementReference gameBoardRef;
+    private System.Timers.Timer gameTimer;
+    private int currentLevel = 1;
+    private bool[,] exploredTiles;
+    private Tile[,] map;
+    private Player player;
+    private Random random = new Random();
+    private bool gameOver = false;
+    private int gameTime = 0;
+    private System.Timers.Timer timer;
+    private List<GameMessage> messages = new List<GameMessage>();
+    private const int MaxMessages = 10;
+
+    private class LeaderboardEntry
+    {
+        public bool Victory { get; set; }
+        public int Gold { get; set; }
+        public int Level { get; set; }
+        public int Time { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private List<LeaderboardEntry> leaderboard = new();
+    private const int MaxLeaderboardEntries = 5;
+
+    private const int BaseHandDamageMin = 1;
+    private const int BaseHandDamageMax = 4;
+    private const int PlayerHitChance = 70; // 70% chance to hit
+
+    private const int TorchDuration = 25; // 25 seconds
+    private const int LanternDuration = 75; // 3x torch duration
+    private int lightSourceTimeRemaining = 0;
+
+    private const int DefaultItemChance = 50; // Default 50% chance per room
+    private int itemGenerationChance = DefaultItemChance; // Adjustable chance
+    private const int DefaultItemsPerRoom = 10; // Default 1 item per room when spawning
+    private int itemsPerRoom = DefaultItemsPerRoom; // Adjustable items per room
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize empty collections first
+        messages = new List<GameMessage>();
+
+        // Initialize game after data is loaded
+        await InitializeGame();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("focusElement", gameBoardRef);
+        }
+    }
+
+    private async Task InitializeGame()
+    {
+        player = new Player();
+        exploredTiles = new bool[MapSize, MapSize];
+        map = new Tile[MapSize, MapSize];
+        
+        GenerateLevel();
+        StartTimer();
+        StartGameTimer();
+    }
+
+    private void StartTimer()
+    {
+        if (timer != null)
+        {
+            timer.Stop();
+            timer.Dispose();
+        }
+
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += async (sender, e) =>
+        {
+            gameTime++;
+            
+            // Handle light source duration
+            if (lightSourceTimeRemaining > 0)
+            {
+                lightSourceTimeRemaining--;
+                if (lightSourceTimeRemaining == 0)
+                {
+                    player.HasTorch = false;
+                    player.HasLantern = false;
+                    // Remove expired light sources from inventory
+                    player.Inventory.RemoveAll(item => 
+                        item.Type == ItemType.Torch || item.Type == ItemType.Lantern);
+                    await InvokeAsync(() => 
+                    {
+                        AddMessage("Your light source has burned out!", MessageType.Danger);
+                    });
+                }
+                else if (lightSourceTimeRemaining <= 5)
+                {
+                    await InvokeAsync(() => 
+                    {
+                        AddMessage($"Light source will expire in {lightSourceTimeRemaining} seconds!", MessageType.Danger);
+                    });
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        };
+        timer.Start();
+    }
+
+    private void StartGameTimer()
+    {
+        if (gameTimer != null)
+        {
+            gameTimer.Stop();
+            gameTimer.Dispose();
+        }
+
+        gameTimer = new System.Timers.Timer(500); // Check monster actions every 500ms
+        gameTimer.Elapsed += async (sender, e) =>
+        {
+            await InvokeAsync(async () =>
+            {
+                if (!gameOver)
+                {
+                    await GameTick();
+                }
+            });
+        };
+        gameTimer.Start();
+    }
+
+    private async Task GameTick()
+    {
+        await InvokeAsync(async () =>
+        {
+            for (int y = 0; y < MapSize; y++)
+            {
+                for (int x = 0; x < MapSize; x++)
+                {
+                    var monster = map[x, y].Monster;
+                    if (monster != null)
+                    {
+                        // Check if monster is adjacent to player
+                        monster.IsAdjacentToPlayer = IsAdjacentToPlayer(x, y);
+
+                        var now = DateTime.Now;
+
+                        // Handle attacks if adjacent to player
+                        if (monster.IsAdjacentToPlayer)
+                        {
+                            var timeSinceLastAttack = (now - monster.LastAttackTime).TotalMilliseconds;
+                            if (timeSinceLastAttack >= monster.AttackSpeed)
+                            {
+                                await MonsterAttack(monster);
+                                monster.LastAttackTime = now;
+                            }
+                        }
+                        // Handle movement if not adjacent to player
+                        else
+                        {
+                            var timeSinceLastMove = (now - monster.LastMoveTime).TotalSeconds;
+                            if (timeSinceLastMove >= monster.MovementSpeed)
+                            {
+                                await MoveMonsterTowardsPlayer(x, y, monster);
+                                monster.LastMoveTime = now;
+                            }
+                        }
+                    }
+                }
+            }
+            StateHasChanged();
+        });
+    }
+
+    private void GenerateLevel()
+    {
+        // Initialize empty map
+        map = new Tile[MapSize, MapSize];
+        for (int y = 0; y < MapSize; y++)
+        {
+            for (int x = 0; x < MapSize; x++)
+            {
+                map[x, y] = new Tile { Type = TileType.Wall };
+            }
+        }
+
+        var rooms = GenerateRooms();
+        ConnectRooms(rooms);
+        PlaceStairs(rooms);
+        PlaceItems(rooms);
+        PlaceMonsters(rooms);
+        PlacePlayer(rooms[0]); // Start player in the first room
+    }
+
+    private List<Room> GenerateRooms()
+    {
+        var rooms = new List<Room>();
+        const int maxAttempts = 100;
+        const int minRoomSize = 5;
+        const int maxRoomSize = 12;
+        const int targetRoomCount = 10;
+
+        for (int i = 0; i < maxAttempts && rooms.Count < targetRoomCount; i++)
+        {
+            int width = random.Next(minRoomSize, maxRoomSize);
+            int height = random.Next(minRoomSize, maxRoomSize);
+            int x = random.Next(1, MapSize - width - 1);
+            int y = random.Next(1, MapSize - height - 1);
+
+            var newRoom = new Room
+            {
+                X = x,
+                Y = y,
+                Width = width,
+                Height = height
+            };
+
+            // Check if room overlaps with existing rooms
+            bool overlaps = false;
+            foreach (var room in rooms)
+            {
+                if (RoomsOverlap(newRoom, room, 2)) // 2 tile padding between rooms
+                {
+                    overlaps = true;
+                    break;
+                }
+            }
+
+            if (!overlaps)
+            {
+                // Carve out the room
+                for (int ry = y; ry < y + height; ry++)
+                {
+                    for (int rx = x; rx < x + width; rx++)
+                    {
+                        map[rx, ry] = new Tile { Type = TileType.Floor };
+                    }
+                }
+                rooms.Add(newRoom);
+            }
+        }
+
+        return rooms;
+    }
+
+    private void ConnectRooms(List<Room> rooms)
+    {
+        for (int i = 0; i < rooms.Count - 1; i++)
+        {
+            var roomA = rooms[i];
+            var roomB = rooms[i + 1];
+
+            // Get center points of rooms
+            var pointA = new Point(roomA.X + roomA.Width / 2, roomA.Y + roomA.Height / 2);
+            var pointB = new Point(roomB.X + roomB.Width / 2, roomB.Y + roomB.Height / 2);
+
+            // Randomly decide whether to go horizontal-vertical or vertical-horizontal
+            if (random.Next(2) == 0)
+            {
+                CreateHorizontalCorridor(pointA.X, pointB.X, pointA.Y);
+                CreateVerticalCorridor(pointA.Y, pointB.Y, pointB.X);
+            }
+            else
+            {
+                CreateVerticalCorridor(pointA.Y, pointB.Y, pointA.X);
+                CreateHorizontalCorridor(pointA.X, pointB.X, pointB.Y);
+            }
+        }
+    }
+
+    private void CreateHorizontalCorridor(int x1, int x2, int y)
+    {
+        for (int x = Math.Min(x1, x2); x <= Math.Max(x1, x2); x++)
+        {
+            if (map[x, y].Type == TileType.Wall)
+            {
+                map[x, y] = new Tile { Type = TileType.Floor };
+            }
+        }
+    }
+
+    private void CreateVerticalCorridor(int y1, int y2, int x)
+    {
+        for (int y = Math.Min(y1, y2); y <= Math.Max(y1, y2); y++)
+        {
+            if (map[x, y].Type == TileType.Wall)
+            {
+                map[x, y] = new Tile { Type = TileType.Floor };
+            }
+        }
+    }
+
+    private void PlaceStairs(List<Room> rooms)
+    {
+        // Place stairs down in the last room (if not at max level)
+        var lastRoom = rooms[rooms.Count - 1];
+        int stairX = lastRoom.X + random.Next(1, lastRoom.Width - 1);
+        int stairY = lastRoom.Y + random.Next(1, lastRoom.Height - 1);
+        map[stairX, stairY] = new Tile { Type = TileType.Stairs };
+
+        // Optionally, place stairs up in first room if not on level 1
+        if (currentLevel > 1)
+        {
+            var firstRoom = rooms[0];
+            int upStairX = firstRoom.X + random.Next(1, firstRoom.Width - 1);
+            int upStairY = firstRoom.Y + random.Next(1, firstRoom.Height - 1);
+            map[upStairX, upStairY] = new Tile { Type = TileType.StairsUp };
+        }
+    }
+
+    private void PlaceItems(List<Room> rooms)
+    {
+        foreach (var room in rooms)
+        {
+            // For each room, attempt to place items based on chance
+            for (int i = 0; i < itemsPerRoom; i++)
+            {
+                if (random.Next(100) < itemGenerationChance)
+                {
+                    // Find a random empty spot in the room
+                    var emptySpots = new List<(int X, int Y)>();
+                    for (int ry = room.Y; ry < room.Y + room.Height; ry++)
+                    {
+                        for (int rx = room.X; rx < room.X + room.Width; rx++)
+                        {
+                            if (map[rx, ry].Type == TileType.Floor && map[rx, ry].Item == null)
+                            {
+                                emptySpots.Add((rx, ry));
+                            }
+                        }
+                    }
+
+                    // If we found empty spots, place an item
+                    if (emptySpots.Any())
+                    {
+                        var spot = emptySpots[random.Next(emptySpots.Count)];
+                        var itemType = (ItemType)random.Next(Enum.GetValues(typeof(ItemType)).Length);
+                        var item = CreateItem(itemType);
+                        map[spot.X, spot.Y].Item = item;
+                    }
+                }
+            }
+        }
+    }
+
+    private Item CreateItem(ItemType type)
+    {
+        var random = new Random();
+        var potionTypes = new[] 
+        { 
+            ("Small Health Potion", 20),
+            ("Medium Health Potion", 40),
+            ("Large Health Potion", 60),
+            ("Super Health Potion", 80)
+        };
+        var potion = potionTypes[random.Next(potionTypes.Length)];
+
+        return type switch
+        {
+            ItemType.Weapon => new Weapon 
+            { 
+                Name = GetRandomWeaponName(),
+                Type = ItemType.Weapon,
+                Damage = random.Next(1, 8),
+                Description = "A weapon to fight monsters",
+                Bonus = random.Next(1, 8)
+            },
+            ItemType.Armor => new Armor 
+            { 
+                Name = GetRandomArmorName(),
+                Type = ItemType.Armor,
+                Defense = random.Next(1, 6),
+                Description = "Protection from attacks",
+                Bonus = random.Next(1, 6)
+            },
+            ItemType.Trap => CreateTrap(),
+            ItemType.Map => new Item
+            {
+                Name = "Ancient Map",
+                Type = ItemType.Map,
+                Description = "Reveals a portion of the dungeon"
+            },
+            ItemType.Lantern => new Item 
+            { 
+                Name = "Magic Lantern", 
+                Type = ItemType.Lantern,
+                Description = "Reveals twice the area of a torch!"
+            },
+            ItemType.HealthPotion => new Item 
+            { 
+                Name = potion.Item1,
+                Type = ItemType.HealthPotion,
+                Description = $"Heals {potion.Item2} HP",
+                Bonus = potion.Item2 // Use Bonus to store healing amount
+            },
+            _ => new Item
+            {
+                Name = "Treasure",
+                Type = type,
+                Description = "A valuable item",
+                Bonus = random.Next(1, 5)
+            }
+        };
+    }
+
+    private Item CreateTrap()
+    {
+        var random = new Random();
+        var trapType = random.Next(3);
+        return trapType switch
+        {
+            0 => new Item
+            {
+                Name = "Memory Loss Trap",
+                Type = ItemType.Trap,
+                Description = "You forget the dungeon layout!",
+                Bonus = -1 // Used to identify trap type
+            },
+            1 => new Item
+            {
+                Name = "Explosive Trap",
+                Type = ItemType.Trap,
+                Description = "A painful surprise!",
+                Bonus = -2
+            },
+            _ => new Item
+            {
+                Name = "Poison Trap",
+                Type = ItemType.Trap,
+                Description = "Slowly drains health",
+                Bonus = -3
+            }
+        };
+    }
+
+    private void PlaceMonsters(List<Room> rooms)
+    {
+        foreach (var room in rooms.Skip(1)) // Skip first room to give player safe start
+        {
+            if (random.Next(10) < 7) // 70% chance for monster
+            {
+                int monsterX = room.X + random.Next(1, room.Width - 1);
+                int monsterY = room.Y + random.Next(1, room.Height - 1);
+
+                var monsterType = random.Next(3);
+                var monster = monsterType switch
+                {
+                    0 => new Monster // Dragon: Slow but strong
+                    {
+                        Name = "Dragon",
+                        Health = random.Next(40, 61),
+                        MinDamage = 12,
+                        MaxDamage = 25,
+                        MovementSpeed = 8,
+                        AttackSpeed = 2000, // 2 seconds between attacks
+                        X = monsterX,
+                        Y = monsterY
+                    },
+                    1 => new Monster // Goblin: Balanced
+                    {
+                        Name = "Goblin",
+                        Health = random.Next(20, 41),
+                        MinDamage = 5,
+                        MaxDamage = 15,
+                        MovementSpeed = 4,
+                        AttackSpeed = 1000, // 1 second between attacks
+                        X = monsterX,
+                        Y = monsterY
+                    },
+                    _ => new Monster // Rat: Fast but weak
+                    {
+                        Name = "Rat",
+                        Health = random.Next(10, 21),
+                        MinDamage = 2,
+                        MaxDamage = 8,
+                        MovementSpeed = 2,
+                        AttackSpeed = 500, // 0.5 seconds between attacks
+                        X = monsterX,
+                        Y = monsterY
+                    }
+                };
+
+                map[monsterX, monsterY].Monster = monster;
+            }
+        }
+    }
+
+    private void PlacePlayer(Room startRoom)
+    {
+        // Place player in the center of the first room
+        player.X = startRoom.X + startRoom.Width / 2;
+        player.Y = startRoom.Y + startRoom.Height / 2;
+        
+        // Mark tiles around player as explored
+        UpdateExploredTiles();
+    }
+
+    private bool RoomsOverlap(Room a, Room b, int padding)
+    {
+        return !(a.X + a.Width + padding < b.X ||
+                 b.X + b.Width + padding < a.X ||
+                 a.Y + a.Height + padding < b.Y ||
+                 b.Y + b.Height + padding < a.Y);
+    }
+
+    private class Room
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+    }
+
+    private class Point
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+
+        public Point(int x, int y)
+        {
+            X = x;
+            Y = y;
+        }
+    }
+
+    private void UpdateExploredTiles()
+    {
+        int viewRange = player.HasLantern ? 6 : (player.HasTorch ? 3 : 2);
+        for (int dy = -viewRange; dy <= viewRange; dy++)
+        {
+            for (int dx = -viewRange; dx <= viewRange; dx++)
+            {
+                int newX = player.X + dx;
+                int newY = player.Y + dy;
+                if (IsValidPosition(newX, newY))
+                {
+                    exploredTiles[newX, newY] = true;
+                }
+            }
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (gameOver) return;
+
+        int newX = player.X;
+        int newY = player.Y;
+
+        switch (e.Key.ToLower())
+        {
+            case "w":
+            case "arrowup":
+                newY--;
+                break;
+            case "s": 
+            case "arrowdown":
+                newY++;
+                break;
+            case "a":
+            case "arrowleft": 
+                newX--;
+                break;
+            case "d":
+            case "arrowright":
+                newX++;
+                break;
+        }
+
+        // Check if new position contains a monster
+        if (IsValidPosition(newX, newY) && map[newX, newY].Monster != null)
+        {
+            // Attack the monster instead of moving
+            await PlayerAttackMonster(map[newX, newY].Monster, newX, newY);
+            return;
+        }
+
+        // Check if new position is valid, walkable, and not occupied by a monster
+        if (IsValidPosition(newX, newY) && 
+            map[newX, newY].Type != TileType.Wall && 
+            map[newX, newY].Monster == null)  // Check for monster
+        {
+            player.X = newX;
+            player.Y = newY;
+
+            // Update explored tiles after movement
+            UpdateExploredTiles();
+
+            // Check for items at new position
+            if (map[newX, newY].Item != null)
+            {
+                await CollectItem(map[newX, newY].Item);
+                map[newX, newY].Item = null;
+            }
+
+            // Check if player is on stairs
+            if (map[newX, newY].Type == TileType.Stairs)
+            {
+                await ShowStairsDialog();
+            }
+        }
+
+        await CheckGameOver();
+        StateHasChanged();
+    }
+
+    private async Task CollectItem(Item item)
+    {
+        switch (item.Type)
+        {
+            case ItemType.Trap:
+                AddMessage($"You triggered a {item.Name}!", MessageType.Danger);
+                await HandleTrap(item);
+                break;
+
+            case ItemType.Map:
+                AddMessage("You found an ancient map!", MessageType.Loot);
+                RevealMap();
+                // Don't add to inventory - map is used immediately
+                break;
+
+            case ItemType.Weapon:
+                var weapon = (Weapon)item;
+                player.Inventory.Add(weapon);
+                // Auto-equip if better than current weapon
+                if (player.EquippedWeapon == null || weapon.Damage > player.EquippedWeapon.Damage)
+                {
+                    if (player.EquippedWeapon != null)
+                    {
+                        AddMessage($"You replace your {player.EquippedWeapon.Name} with {weapon.Name} (+{weapon.Damage} damage)", MessageType.Loot);
+                    }
+                    else
+                    {
+                        AddMessage($"You equip {weapon.Name} (+{weapon.Damage} damage)", MessageType.Loot);
+                    }
+                    player.EquippedWeapon = weapon;
+                }
+                else
+                {
+                    AddMessage($"You store {weapon.Name} in your inventory", MessageType.Loot);
+                }
+                break;
+
+            case ItemType.Armor:
+                var armor = (Armor)item;
+                player.Inventory.Add(armor);
+                // Auto-equip if better than current armor - compare Bonus instead of Defense
+                if (player.EquippedArmor == null || armor.Bonus > player.EquippedArmor.Bonus)
+                {
+                    if (player.EquippedArmor != null)
+                    {
+                        AddMessage($"You replace your {player.EquippedArmor.Name} with {armor.Name} (+{armor.Bonus} defense)", MessageType.Loot);
+                    }
+                    else
+                    {
+                        AddMessage($"You equip {armor.Name} (+{armor.Bonus} defense)", MessageType.Loot);
+                    }
+                    player.EquippedArmor = armor;
+                }
+                else
+                {
+                    AddMessage($"You store {armor.Name} (+{armor.Bonus} defense) in your inventory", MessageType.Loot);
+                }
+                break;
+
+            case ItemType.Gold:
+                int goldAmount = random.Next(10, 101);
+                player.Gold += goldAmount;
+                AddMessage($"You found {goldAmount} gold!", MessageType.Loot);
+                break;
+
+            case ItemType.Torch:
+                player.HasTorch = true;
+                player.HasLantern = false; // Remove lantern if we had one
+                lightSourceTimeRemaining = TorchDuration;
+                player.Inventory.Add(item);
+                AddMessage($"You light a torch! It will burn for {TorchDuration} seconds.", MessageType.Loot);
+                break;
+
+            case ItemType.Lantern:
+                player.HasLantern = true;
+                player.HasTorch = false;
+                lightSourceTimeRemaining = LanternDuration;
+                player.Inventory.Add(item);
+                AddMessage($"You light the magic lantern! It will burn for {LanternDuration} seconds.", MessageType.Loot);
+                break;
+
+            case ItemType.Key:
+                player.Inventory.Add(item);
+                AddMessage($"You found a {item.Name}!", MessageType.Loot);
+                break;
+
+            case ItemType.HealthPotion:
+                int healAmount = item.Bonus;
+                int actualHeal = Math.Min(healAmount, player.MaxHealth - player.Health);
+                player.Health = Math.Min(player.MaxHealth, player.Health + healAmount);
+                
+                if (actualHeal > 0)
+                {
+                    AddMessage($"You drink the {item.Name} and heal for {actualHeal} HP!", MessageType.Loot);
+                    if (player.Health == player.MaxHealth)
+                    {
+                        AddMessage("You are now at full health!", MessageType.Info);
+                    }
+                }
+                else
+                {
+                    AddMessage("You are already at full health!", MessageType.Info);
+                }
+                break;
+
+            default:
+                player.Inventory.Add(item);
+                AddMessage($"You found a {item.Name}!", MessageType.Loot);
+                break;
+        }
+    }
+
+    private async Task HandleTrap(Item trap)
+    {
+        switch (trap.Bonus)
+        {
+            case -1: // Memory Loss
+                ResetFogOfWar();
+                AddMessage("The trap causes you to forget the dungeon layout!", MessageType.Danger);
+                break;
+            case -2: // Explosive
+                player.Health -= 20;
+                AddMessage("The explosive trap deals 20 damage!", MessageType.Danger);
+                break;
+            case -3: // Poison
+                player.Health -= 10;
+                AddMessage("The poison trap deals 10 damage!", MessageType.Danger);
+                break;
+        }
+    }
+
+    private void ResetFogOfWar()
+    {
+        exploredTiles = new bool[MapSize, MapSize];
+        UpdateExploredTiles(); // Only reveal current visible area
+    }
+
+    private void RevealMap()
+    {
+        // Reveal a larger area around the player
+        int revealRange = 10;
+        for (int dy = -revealRange; dy <= revealRange; dy++)
+        {
+            for (int dx = -revealRange; dx <= revealRange; dx++)
+            {
+                int newX = player.X + dx;
+                int newY = player.Y + dy;
+                if (IsValidPosition(newX, newY))
+                {
+                    exploredTiles[newX, newY] = true;
+                }
+            }
+        }
+        AddMessage("The map reveals a large portion of the dungeon!", MessageType.Info);
+    }
+
+    private string GetRandomWeaponName()
+    {
+        var weapons = new[] { "Sword", "Axe", "Mace", "Dagger", "Spear" };
+        var prefixes = new[] { "Rusty", "Sharp", "Ancient", "Magic", "Golden" };
+        return $"{prefixes[random.Next(prefixes.Length)]} {weapons[random.Next(weapons.Length)]}";
+    }
+
+    private string GetRandomArmorName()
+    {
+        var armors = new[] { "Leather Armor", "Chain Mail", "Plate Mail", "Scale Armor", "Dragon Scale" };
+        var prefixes = new[] { "Worn", "Sturdy", "Ancient", "Enchanted", "Blessed" };
+        return $"{prefixes[random.Next(prefixes.Length)]} {armors[random.Next(armors.Length)]}";
+    }
+
+    private string GetItemBonus(Item item)
+    {
+        if (item == null) return "";
+        return item.Type switch
+        {
+            ItemType.Weapon => $"+{item.Bonus} damage",
+            ItemType.Armor => $"+{item.Bonus} defense",
+            _ => ""
+        };
+    }
+
+    private Tile GetVisibleTile(int x, int y)
+    {
+        if (!IsVisible(x, y) && !exploredTiles[x, y])
+            return null;
+        return map[x, y];
+    }
+
+    private bool IsVisible(int x, int y)
+    {
+        int dx = Math.Abs(x - player.X);
+        int dy = Math.Abs(y - player.Y);
+        int viewRange = player.HasLantern ? 6 : (player.HasTorch ? 3 : 2);
+        return Math.Max(dx, dy) <= viewRange;
+    }
+
+    private string GetTileClass(Tile tile)
+    {
+        if (tile == null)
+            return "fog";
+        return tile.Type switch
+        {
+            TileType.Wall => "wall",
+            TileType.Floor => "floor",
+            TileType.Door => "door",
+            TileType.Stairs => "stairs",
+            _ => "floor"
+        };
+    }
+
+    private string GetItemIcon(Item item)
+    {
+        return item.Type switch
+        {
+            ItemType.Weapon => "fas fa-sword",
+            ItemType.Armor => "fas fa-shield",
+            ItemType.Torch => "fas fa-fire",
+            ItemType.Lantern => "fas fa-lightbulb",
+            ItemType.Key => "fas fa-key",
+            ItemType.Gold => "fas fa-coins",
+            ItemType.HealthPotion => "fas fa-flask",
+            _ => "fas fa-question"
+        };
+    }
+
+    public void Dispose()
+    {
+        timer?.Stop();
+        timer?.Dispose();
+        gameTimer?.Stop();
+        gameTimer?.Dispose();
+    }
+
+    private class Player
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Health { get; set; } = 100;
+        public int MaxHealth { get; set; } = 100;
+        public int Gold { get; set; }
+        public bool HasTorch { get; set; }
+        public bool HasLantern { get; set; }
+        public Weapon EquippedWeapon { get; set; }
+        public Armor EquippedArmor { get; set; }
+        public List<Item> Inventory { get; set; } = new();
+    }
+
+    private class Tile
+    {
+        public TileType Type { get; set; }
+        public Monster Monster { get; set; }
+        public Item Item { get; set; }
+        public bool IsDoor { get; set; }
+        public bool IsLocked { get; set; }
+    }
+
+    private enum TileType
+    {
+        Wall,
+        Floor,
+        Door,
+        Stairs,
+        StairsUp
+    }
+
+    private class Item
+    {
+        public string Name { get; set; }
+        public ItemType Type { get; set; }
+        public string Description { get; set; }
+        public int Bonus { get; set; }
+    }
+
+    private class Weapon : Item
+    {
+        public int Damage { get; set; }
+        public int HitChance { get; set; } = 70; // Default hit chance
+    }
+
+    private class Armor : Item
+    {
+        public int Defense { get; set; }
+    }
+
+    private enum ItemType
+    {
+        Weapon,
+        Armor,
+        Torch,
+        Lantern,
+        Key,
+        Gold,
+        Trap,
+        Map,
+        HealthPotion
+    }
+
+    private class Monster
+    {
+        public string Name { get; set; }
+        public int Health { get; set; }
+        public int MinDamage { get; set; }
+        public int MaxDamage { get; set; }
+        public int MovementSpeed { get; set; } // Seconds between moves
+        public int AttackSpeed { get; set; } // Milliseconds between attacks
+        public DateTime LastMoveTime { get; set; } = DateTime.Now;
+        public DateTime LastAttackTime { get; set; } = DateTime.Now;
+        public int X { get; set; }
+        public int Y { get; set; }
+        public bool IsAdjacentToPlayer { get; set; }
+    }
+
+    private bool IsValidPosition(int x, int y)
+    {
+        return x >= 0 && x < MapSize && y >= 0 && y < MapSize;
+    }
+
+    private async Task MoveMonsterTowardsPlayer(int currentX, int currentY, Monster monster)
+    {
+        // Don't move if adjacent to player
+        if (IsAdjacentToPlayer(currentX, currentY))
+        {
+            monster.IsAdjacentToPlayer = true;
+            return;
+        }
+
+        // Calculate direction to player
+        int dx = Math.Sign(player.X - currentX);
+        int dy = Math.Sign(player.Y - currentY);
+
+        // Try to move in the best direction
+        int newX = currentX;
+        int newY = currentY;
+
+        // Prefer moving in the direction that's further from the player
+        if (Math.Abs(player.X - currentX) > Math.Abs(player.Y - currentY))
+        {
+            // Try horizontal movement first
+            if (CanMonsterMove(currentX + dx, currentY))
+            {
+                newX = currentX + dx;
+            }
+            else if (CanMonsterMove(currentX, currentY + dy))
+            {
+                newY = currentY + dy;
+            }
+        }
+        else
+        {
+            // Try vertical movement first
+            if (CanMonsterMove(currentX, currentY + dy))
+            {
+                newY = currentY + dy;
+            }
+            else if (CanMonsterMove(currentX + dx, currentY))
+            {
+                newX = currentX + dx;
+            }
+        }
+
+        // If monster can move to the new position
+        if ((newX != currentX || newY != currentY) && CanMonsterMove(newX, newY))
+        {
+            // Check if monster is moving into player
+            if (newX == player.X && newY == player.Y)
+            {
+                // Attack player instead of moving
+                await AttackPlayer(monster);
+            }
+            else
+            {
+                // Move monster
+                map[newX, newY].Monster = monster;
+                map[currentX, currentY].Monster = null;
+                monster.X = newX;
+                monster.Y = newY;
+            }
+        }
+    }
+
+    private bool CanMonsterMove(int x, int y)
+    {
+        return IsValidPosition(x, y) && 
+               map[x, y].Type != TileType.Wall && 
+               map[x, y].Monster == null &&
+               !(x == player.X && y == player.Y);
+    }
+
+    private async Task AttackPlayer(Monster monster)
+    {
+        // Calculate random damage between MinDamage and MaxDamage
+        int damage = random.Next(monster.MinDamage, monster.MaxDamage + 1);
+        
+        // Apply armor reduction if player has armor
+        if (player.EquippedArmor != null)
+        {
+            int originalDamage = damage;
+            damage = Math.Max(1, damage - player.EquippedArmor.Defense);
+            AddMessage($"{monster.Name} hits you for {damage} damage! (Armor absorbed {originalDamage - damage})", MessageType.Combat);
+        }
+        else
+        {
+            AddMessage($"{monster.Name} hits you for {damage} damage!", MessageType.Combat);
+        }
+
+        player.Health = Math.Max(0, player.Health - damage);
+
+        if (player.Health <= 0)
+        {
+            AddMessage("You have been slain!", MessageType.Danger);
+            await CheckGameOver();
+        }
+    }
+
+    private async Task CheckGameOver()
+    {
+        bool isGameOver = false;
+
+        // Check if player is dead
+        if (player.Health <= 0)
+        {
+            player.Health = 0; // Ensure health doesn't go negative
+            isGameOver = true;
+        }
+
+        if (isGameOver && !gameOver)
+        {
+            gameOver = true;
+            timer?.Stop(); // Stop the game time timer
+            gameTimer?.Stop(); // Stop the monster movement timer
+            leaderboard = await LoadLeaderboard();
+
+            await SaveLeaderboardEntry();
+            StateHasChanged();
+        }
+    }
+
+    private bool IsAdjacentToPlayer(int monsterX, int monsterY)
+    {
+        // Check if monster is within 1 square of player (including diagonals)
+        int dx = Math.Abs(monsterX - player.X);
+        int dy = Math.Abs(monsterY - player.Y);
+        return dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0);
+    }
+
+    private async Task MonsterAttack(Monster monster)
+    {
+        // 75% chance to hit
+        if (random.Next(100) < 75)
+        {
+            int damage = random.Next(monster.MinDamage, monster.MaxDamage + 1);
+            
+            // Apply armor reduction if player has armor
+            if (player.EquippedArmor != null)
+            {
+                int originalDamage = damage;
+                damage = Math.Max(1, damage - player.EquippedArmor.Defense);
+                AddMessage($"{monster.Name} hits you for {damage} damage! (Armor absorbed {originalDamage - damage})", MessageType.Combat);
+            }
+            else
+            {
+                AddMessage($"{monster.Name} hits you for {damage} damage!", MessageType.Combat);
+            }
+
+            player.Health = Math.Max(0, player.Health - damage);
+
+            // Check if player died
+            if (player.Health <= 0)
+            {
+                AddMessage("You have been slain!", MessageType.Danger);
+                await CheckGameOver();
+            }
+        }
+        else
+        {
+            AddMessage($"{monster.Name} missed!", MessageType.Combat);
+        }
+    }
+
+    private async Task RestartGame()
+    {
+        if (timer != null)
+        {
+            timer.Stop();
+            timer.Dispose();
+        }
+        if (gameTimer != null)
+        {
+            gameTimer.Stop();
+            gameTimer.Dispose();
+        }
+        gameTime = 0;
+        gameOver = false;
+        player = new Player();
+        exploredTiles = new bool[MapSize, MapSize];
+        map = new Tile[MapSize, MapSize];
+        messages.Clear(); // Clear all messages
+        
+        GenerateLevel();
+        StartTimer(); // Restart the game time timer
+        StartGameTimer(); // Restart the monster movement timer
+        AddMessage("New game started!", MessageType.Info);
+        StateHasChanged();
+    }
+
+    private class GameMessage
+    {
+        public string Text { get; set; }
+        public MessageType Type { get; set; }
+        public DateTime Time { get; set; } = DateTime.Now;
+    }
+
+    private enum MessageType
+    {
+        Info,
+        Combat,
+        Loot,
+        Danger
+    }
+
+    private void AddMessage(string text, MessageType type = MessageType.Info)
+    {
+        messages.Insert(0, new GameMessage { Text = text, Type = type }); // Insert at the beginning
+        
+        // Trim the list if it exceeds MaxMessages
+        if (messages.Count > MaxMessages)
+        {
+            messages.RemoveRange(MaxMessages, messages.Count - MaxMessages);
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task SaveLeaderboardEntry()
+    {
+        if (!gameOver) return;
+
+        var entry = new LeaderboardEntry
+        {
+            Victory = player.Health > 0,
+            Gold = player.Gold,
+            Level = currentLevel,
+            Time = gameTime,
+            Date = DateTime.Now
+        };
+
+        leaderboard.Add(entry);
+        leaderboard = leaderboard
+            .OrderByDescending(e => e.Gold) // Sort by gold collected
+            .ThenByDescending(e => e.Level) // Then by level reached
+            .ThenBy(e => e.Time) // Then by time (faster is better)
+            .Take(MaxLeaderboardEntries)
+            .ToList();
+
+        await SaveLeaderboard();
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            "dungeon-leaderboard",
+            JsonSerializer.Serialize(leaderboard)
+        );
+    }
+
+    private async Task<List<LeaderboardEntry>> LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>(
+            "localStorage.getItem",
+            "dungeon-leaderboard"
+            );
+
+            if (string.IsNullOrEmpty(json))
+                return new List<LeaderboardEntry>();
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<LeaderboardEntry>>(json)
+            ?? new List<LeaderboardEntry>();
+        }
+        catch
+        {
+            return new List<LeaderboardEntry>();
+        }
+    }
+
+    private async Task PlayerAttackMonster(Monster monster, int monsterX, int monsterY)
+    {
+        // Determine if attack hits (70% chance)
+        if (random.Next(100) < PlayerHitChance)
+        {
+            // Calculate damage based on weapon
+            int minDamage = player.EquippedWeapon?.Damage ?? BaseHandDamageMin;
+            int maxDamage = (player.EquippedWeapon?.Damage ?? BaseHandDamageMin) + 3;
+            int damage = random.Next(minDamage, maxDamage + 1);
+
+            monster.Health -= damage;
+
+            // Show hit message
+            string weaponName = player.EquippedWeapon?.Name ?? "bare hands";
+            AddMessage($"You hit the {monster.Name} with your {weaponName} for {damage} damage!", MessageType.Combat);
+
+            // Check if monster died
+            if (monster.Health <= 0)
+            {
+                AddMessage($"You have slain the {monster.Name}!", MessageType.Combat);
+                map[monsterX, monsterY].Monster = null;
+
+                // Chance to drop loot
+                if (random.Next(100) < 30) // 30% chance to drop loot
+                {
+                    var itemType = (ItemType)random.Next(Enum.GetValues(typeof(ItemType)).Length);
+                    var item = CreateItem(itemType);
+                    map[monsterX, monsterY].Item = item;
+                    AddMessage($"The {monster.Name} dropped {item.Name}!", MessageType.Loot);
+                }
+            }
+            else
+            {
+                AddMessage($"The {monster.Name} has {monster.Health} HP remaining.", MessageType.Combat);
+            }
+        }
+        else
+        {
+            AddMessage($"You missed the {monster.Name}!", MessageType.Combat);
+        }
+
+        await CheckGameOver();
+    }
+
+    private string GetRandomWeaponPrefix()
+    {
+        var prefixes = new[] { "Rusty", "Sharp", "Ancient", "Magic", "Golden", "Deadly", "Swift" };
+        return prefixes[random.Next(prefixes.Length)];
+    }
+
+    private bool IsItemEquipped(Item item)
+    {
+        if (item is Weapon weapon)
+            return weapon == player.EquippedWeapon;
+        if (item is Armor armor)
+            return armor == player.EquippedArmor;
+        return false;
+    }
+
+    private IEnumerable<Item> GetSortedInventory()
+    {
+        return player.Inventory
+            .OrderByDescending(item => IsItemEquipped(item)) // Equipped items first
+            .ThenByDescending(item => GetItemValue(item)) // Then by item value
+            .ThenBy(item => item.Name); // Then alphabetically
+    }
+
+    private int GetItemValue(Item item)
+    {
+        return item switch
+        {
+            Weapon weapon => weapon.Bonus * 100, // Weapons highest priority
+            Armor armor => armor.Bonus * 90,     // Armor next priority
+            _ => item.Type switch
+            {
+                ItemType.Lantern => 80,
+                ItemType.Torch => 70,
+                ItemType.Key => 60,
+                ItemType.Map => 50,
+                _ => 0
+            }
+        };
+    }
+
+    private async Task ShowStairsDialog()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>(
+            "confirm", 
+            $"Do you want to descend to level {currentLevel + 1}?"
+        );
+
+        if (confirmed)
+        {
+            await ChangeLevel(currentLevel + 1);
+        }
+    }
+
+    private async Task ChangeLevel(int newLevel)
+    {
+        currentLevel = newLevel;
+        AddMessage($"Descending to level {currentLevel}...", MessageType.Info);
+
+        // Save player's current state
+        var savedHealth = player.Health;
+        var savedMaxHealth = player.MaxHealth;
+        var savedGold = player.Gold;
+        var savedInventory = player.Inventory;
+        var savedEquippedWeapon = player.EquippedWeapon;
+        var savedEquippedArmor = player.EquippedArmor;
+        var savedHasTorch = player.HasTorch;
+        var savedHasLantern = player.HasLantern;
+        var savedLightSourceTimeRemaining = lightSourceTimeRemaining;
+
+        // Generate new level
+        map = new Tile[MapSize, MapSize];
+        for (int y = 0; y < MapSize; y++)
+        {
+            for (int x = 0; x < MapSize; x++)
+            {
+                map[x, y] = new Tile { Type = TileType.Wall };
+            }
+        }
+        exploredTiles = new bool[MapSize, MapSize];
+        
+        // Generate new dungeon layout
+        GenerateLevel();
+
+        // Restore player's state
+        player.Health = savedHealth;
+        player.MaxHealth = savedMaxHealth;
+        player.Gold = savedGold;
+        player.Inventory = savedInventory;
+        player.EquippedWeapon = savedEquippedWeapon;
+        player.EquippedArmor = savedEquippedArmor;
+        player.HasTorch = savedHasTorch;
+        player.HasLantern = savedHasLantern;
+        lightSourceTimeRemaining = savedLightSourceTimeRemaining;
+
+        // Make monsters slightly harder each level
+        AdjustMonsterDifficulty();
+
+        AddMessage($"Welcome to dungeon level {currentLevel}!", MessageType.Info);
+        StateHasChanged();
+    }
+
+    private void AdjustMonsterDifficulty()
+    {
+        // Increase monster stats based on level
+        foreach (var room in GetRooms())
+        {
+            for (int y = room.Y; y < room.Y + room.Height; y++)
+            {
+                for (int x = room.X; x < room.X + room.Width; x++)
+                {
+                    if (map[x, y].Monster != null)
+                    {
+                        var monster = map[x, y].Monster;
+                        // Increase monster stats by 10% per level
+                        float multiplier = 1 + ((currentLevel - 1) * 0.1f);
+                        monster.MinDamage = (int)(monster.MinDamage * multiplier);
+                        monster.MaxDamage = (int)(monster.MaxDamage * multiplier);
+                        monster.Health = (int)(monster.Health * multiplier);
+                    }
+                }
+            }
+        }
+    }
+
+    // Helper method to get all rooms
+    private List<Room> GetRooms()
+    {
+        var rooms = new List<Room>();
+        // Implementation depends on how you're storing room data
+        // If you're not storing rooms, you might need to modify your room generation
+        // to store the room list or implement a way to find rooms
+        return rooms;
+    }
+}
