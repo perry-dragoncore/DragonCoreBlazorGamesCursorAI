@@ -31,113 +31,6 @@
     <source src="sounds/dungeon-background.mp3" type="audio/mpeg">
 </audio>
 
-@code {
-    private bool isMusicPlaying = false;
-    private bool showMagnifier = true;
-    private bool isSpecialPulse = false;
-    private bool isDangerPulse = false;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await JSRuntime.InvokeVoidAsync("focusElement", gameBoardRef);
-            await PlaySound("startGameSound");
-            await PlayBackgroundMusic();
-            await JSRuntime.InvokeVoidAsync("playBackgroundMusic", 0.3);
-        }
-    }
-
-    private async Task PlayBackgroundMusic()
-    {
-        if (!isMusicPlaying)
-        {
-            await JSRuntime.InvokeVoidAsync("playAudio", "bgMusic");
-            isMusicPlaying = true;
-        }
-    }
-
-    private async Task PlaySound(string soundId)
-    {
-        await JSRuntime.InvokeVoidAsync("playAudio", soundId);
-    }
-
-    // Call these methods when appropriate actions occur:
-    private async Task PlayAttackSound() => await PlaySound("attackSound");
-    private async Task PlayItemPickupSound() => await PlaySound("itemPickupSound");
-    private async Task PlayPlayerHitSound() => await PlaySound("playerHitSound");
-
-    private async Task ToggleMusic()
-    {
-        await JSRuntime.InvokeVoidAsync("toggleBackgroundMusic");
-    }
-
-    public void Dispose()
-    {
-        // Stop background music when component is disposed
-        if (isMusicPlaying)
-        {
-            JSRuntime.InvokeVoidAsync("stopAudio", "bgMusic");
-        }
-
-        timer?.Stop();
-        timer?.Dispose();
-        gameTimer?.Stop();
-        gameTimer?.Dispose();
-    }
-
-    private void ToggleMagnifier()
-    {
-        showMagnifier = !showMagnifier;
-        StateHasChanged();
-    }
-
-    // Add this new method for shortened bonus display
-    private string GetItemBonusShort(Item item)
-    {
-        if (item == null) return "";
-        return item.Type switch
-        {
-            ItemType.Weapon => $"(+{item.Bonus})",
-            ItemType.Armor => $"(+{item.Bonus})",
-            _ => ""
-        };
-    }
-
-    private void HandlePulseEnd()
-    {
-        if (isSpecialPulse)
-        {
-            isSpecialPulse = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task TriggerSpecialPulse()
-    {
-        isSpecialPulse = true;
-        StateHasChanged();
-
-        // Wait for animation to complete
-        await Task.Delay(1000); // 1 second to match the animation duration
-
-        isSpecialPulse = false;
-        StateHasChanged();
-    }
-
-    private async Task TriggerDangerPulse()
-    {
-        isDangerPulse = true;
-        StateHasChanged();
-
-        await Task.Delay(1000); // 1 second for the danger animation
-
-        isDangerPulse = false;
-        StateHasChanged();
-    }
-
-}
-
 <div class="game-container">
     <div class="game-header">
         <div class="header-content">
@@ -386,7 +279,7 @@
 
 @code {
     private const int MapHeight = 60;
-    private const int MapWidth = 60;
+    private const int MapWidth = 80;
     private const int ViewRadius = 2;
     private ElementReference gameBoardRef;
     private System.Timers.Timer gameTimer;
@@ -399,7 +292,111 @@
     private int gameTime = 0;
     private System.Timers.Timer timer;
     private List<GameMessage> messages = new List<GameMessage>();
-    private const int MaxMessages = 10;
+    private const int MaxMessages = 16;
+
+    private bool isMusicPlaying = false;
+    private bool showMagnifier = true;
+    private bool isSpecialPulse = false;
+    private bool isDangerPulse = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("focusElement", gameBoardRef);
+            await PlaySound("startGameSound");
+            await PlayBackgroundMusic();
+            await JSRuntime.InvokeVoidAsync("playBackgroundMusic", 0.3);
+        }
+    }
+
+    private async Task PlayBackgroundMusic()
+    {
+        if (!isMusicPlaying)
+        {
+            await JSRuntime.InvokeVoidAsync("playAudio", "bgMusic");
+            isMusicPlaying = true;
+        }
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playAudio", soundId);
+    }
+
+    // Call these methods when appropriate actions occur:
+    private async Task PlayAttackSound() => await PlaySound("attackSound");
+    private async Task PlayItemPickupSound() => await PlaySound("itemPickupSound");
+    private async Task PlayPlayerHitSound() => await PlaySound("playerHitSound");
+
+    private async Task ToggleMusic()
+    {
+        await JSRuntime.InvokeVoidAsync("toggleBackgroundMusic");
+    }
+
+    public void Dispose()
+    {
+        // Stop background music when component is disposed
+        if (isMusicPlaying)
+        {
+            JSRuntime.InvokeVoidAsync("stopAudio", "bgMusic");
+        }
+
+        timer?.Stop();
+        timer?.Dispose();
+        gameTimer?.Stop();
+        gameTimer?.Dispose();
+    }
+
+    private void ToggleMagnifier()
+    {
+        showMagnifier = !showMagnifier;
+        StateHasChanged();
+    }
+
+    // Add this new method for shortened bonus display
+    private string GetItemBonusShort(Item item)
+    {
+        if (item == null) return "";
+        return item.Type switch
+        {
+            ItemType.Weapon => $"(+{item.Bonus})",
+            ItemType.Armor => $"(+{item.Bonus})",
+            _ => ""
+        };
+    }
+
+    private void HandlePulseEnd()
+    {
+        if (isSpecialPulse)
+        {
+            isSpecialPulse = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TriggerSpecialPulse()
+    {
+        isSpecialPulse = true;
+        StateHasChanged();
+
+        // Wait for animation to complete
+        await Task.Delay(1000); // 1 second to match the animation duration
+
+        isSpecialPulse = false;
+        StateHasChanged();
+    }
+
+    private async Task TriggerDangerPulse()
+    {
+        isDangerPulse = true;
+        StateHasChanged();
+
+        await Task.Delay(1000); // 1 second for the danger animation
+
+        isDangerPulse = false;
+        StateHasChanged();
+    }
 
     private class LeaderboardEntry
     {
@@ -526,11 +523,11 @@
     {
         await InvokeAsync(async () =>
         {
-            for (int y = 0; y < MapWidth; y++)
+            for (int y = 0; y < MapHeight; y++)
             {
-                for (int x = 0; x < MapHeight; x++)
+                for (int x = 0; x < MapWidth; x++)
                 {
-                    var monster = map[x, y].Monster;
+                    var monster = map[y, x].Monster;
                     if (monster != null)
                     {
                         // Check if monster is adjacent to player
@@ -569,11 +566,11 @@
     {
         // Initialize empty map
         map = new Tile[MapHeight, MapWidth];
-        for (int y = 0; y < MapWidth; y++)
+        for (int y = 0; y < MapHeight; y++)
         {
-            for (int x = 0; x < MapHeight; x++)
+            for (int x = 0; x < MapWidth; x++)
             {
-                map[x, y] = new Tile { Type = TileType.Wall };
+                map[y, x] = new Tile { Type = TileType.Wall };
             }
         }
 
@@ -591,7 +588,7 @@
         const int maxAttempts = 100;
         const int minRoomSize = 5;
         const int maxRoomSize = 12;
-        const int targetRoomCount = 10;
+        const int targetRoomCount = 12;
 
         for (int i = 0; i < maxAttempts && rooms.Count < targetRoomCount; i++)
         {
@@ -626,7 +623,7 @@
                 {
                     for (int rx = x; rx < x + width; rx++)
                     {
-                        map[rx, ry] = new Tile { Type = TileType.Floor };
+                        map[ry, rx] = new Tile { Type = TileType.Floor };
                     }
                 }
                 rooms.Add(newRoom);
@@ -665,9 +662,9 @@
     {
         for (int x = Math.Min(x1, x2); x <= Math.Max(x1, x2); x++)
         {
-            if (map[x, y].Type == TileType.Wall)
+            if (map[y, x].Type == TileType.Wall)
             {
-                map[x, y] = new Tile { Type = TileType.Floor };
+                map[y, x] = new Tile { Type = TileType.Floor };
             }
         }
     }
@@ -676,9 +673,9 @@
     {
         for (int y = Math.Min(y1, y2); y <= Math.Max(y1, y2); y++)
         {
-            if (map[x, y].Type == TileType.Wall)
+            if (map[y, x].Type == TileType.Wall)
             {
-                map[x, y] = new Tile { Type = TileType.Floor };
+                map[y, x] = new Tile { Type = TileType.Floor };
             }
         }
     }
@@ -689,7 +686,7 @@
         var lastRoom = rooms[rooms.Count - 1];
         int stairX = lastRoom.X + random.Next(1, lastRoom.Width - 1);
         int stairY = lastRoom.Y + random.Next(1, lastRoom.Height - 1);
-        map[stairX, stairY] = new Tile { Type = TileType.Stairs };
+        map[stairY, stairX] = new Tile { Type = TileType.Stairs };
 
         // Place stairs up in first room if not on level 1
         if (currentLevel > 1)
@@ -697,7 +694,7 @@
             var firstRoom = rooms[0];
             int upStairX = firstRoom.X + random.Next(1, firstRoom.Width - 1);
             int upStairY = firstRoom.Y + random.Next(1, firstRoom.Height - 1);
-            map[upStairX, upStairY] = new Tile { Type = TileType.StairsUp };
+            map[upStairY, upStairX] = new Tile { Type = TileType.StairsUp };
         }
     }
 
@@ -716,7 +713,7 @@
                     {
                         for (int rx = room.X; rx < room.X + room.Width; rx++)
                         {
-                            if (map[rx, ry].Type == TileType.Floor && map[rx, ry].Item == null)
+                            if (map[ry, rx].Type == TileType.Floor && map[ry, rx].Item == null)
                             {
                                 emptySpots.Add((rx, ry));
                             }
@@ -729,7 +726,7 @@
                         var spot = emptySpots[random.Next(emptySpots.Count)];
                         var itemType = (ItemType)random.Next(Enum.GetValues(typeof(ItemType)).Length);
                         var item = CreateItem(itemType);
-                        map[spot.X, spot.Y].Item = item;
+                        map[spot.Y, spot.X].Item = item;
                     }
                 }
             }
@@ -873,7 +870,7 @@
                     }
                 };
 
-                map[monsterX, monsterY].Monster = monster;
+                map[monsterY, monsterX].Monster = monster;
             }
         }
     }
@@ -927,7 +924,7 @@
                 int newY = player.Y + dy;
                 if (IsValidPosition(newX, newY))
                 {
-                    exploredTiles[newX, newY] = true;
+                    exploredTiles[newY, newX] = true;
                 }
             }
         }
@@ -964,15 +961,15 @@
         if (IsValidPosition(newX, newY))
         {
             // Check if there's a monster at the new position
-            if (map[newX, newY].Monster != null)
+            if (map[newY, newX].Monster != null)
             {
                 // Attack the monster instead of moving
-                await PlayerAttackMonster(map[newX, newY].Monster, newX, newY);
+                await PlayerAttackMonster(map[newY, newX].Monster, newX, newY);
                 return;
             }
 
             // If no monster and position is walkable, proceed with movement
-            if (map[newX, newY].Type != TileType.Wall)
+            if (map[newY, newX].Type != TileType.Wall)
             {
                 player.X = newX;
                 player.Y = newY;
@@ -981,15 +978,15 @@
                 UpdateExploredTiles();
 
                 // Check for items at new position
-                if (map[newX, newY].Item != null)
+                if (map[newY, newX].Item != null)
                 {
-                    await CollectItem(map[newX, newY].Item);
-                    map[newX, newY].Item = null;
+                    await CollectItem(map[newY, newX].Item);
+                    map[newY, newX].Item = null;
                 }
 
                 // Check if player is on any type of stairs
-                if (map[newX, newY].Type == TileType.Stairs || 
-                    map[newX, newY].Type == TileType.StairsUp)
+                if (map[newY, newX].Type == TileType.Stairs || 
+                    map[newY, newX].Type == TileType.StairsUp)
                 {
                     await ShowStairsDialog();
                 }
@@ -1168,7 +1165,7 @@
                 int newY = player.Y + dy;
                 if (IsValidPosition(newX, newY))
                 {
-                    exploredTiles[newX, newY] = true;
+                    exploredTiles[newY, newX] = true;
                 }
             }
         }
@@ -1202,9 +1199,9 @@
 
     private Tile GetVisibleTile(int x, int y)
     {
-        if (!IsVisible(x, y) && !exploredTiles[x, y])
+        if (!IsVisible(x, y) && !exploredTiles[y, x])
             return null;
-        return map[x, y];
+        return map[y, x];
     }
 
     private bool IsVisible(int x, int y)
@@ -1212,7 +1209,7 @@
         int dx = Math.Abs(x - player.X);
         int dy = Math.Abs(y - player.Y);
         int viewRange = player.HasLantern ? 6 : (player.HasTorch ? 3 : 2);
-        return Math.Max(dx, dy) <= viewRange;
+        return Math.Max(dy, dx) <= viewRange;
     }
 
     private string GetTileClass(Tile tile)
@@ -1386,8 +1383,8 @@
             else
             {
                 // Move monster
-                map[newX, newY].Monster = monster;
-                map[currentX, currentY].Monster = null;
+                map[newY, newX].Monster = monster;
+                map[currentY, currentX].Monster = null;
                 monster.X = newX;
                 monster.Y = newY;
             }
@@ -1397,8 +1394,8 @@
     private bool CanMonsterMove(int x, int y)
     {
         return IsValidPosition(x, y) && 
-               map[x, y].Type != TileType.Wall && 
-               map[x, y].Monster == null &&
+               map[y, x].Type != TileType.Wall && 
+               map[y, x].Monster == null &&
                !(x == player.X && y == player.Y);
     }
 
@@ -1668,14 +1665,14 @@
                 
                 await GainExperience(xpGain, $"defeating {monster.Name}");
                 
-                map[monsterX, monsterY].Monster = null;
+                map[monsterY, monsterX].Monster = null;
 
                 // Chance to drop loot
                 if (random.Next(100) < 30) // 30% chance to drop loot
                 {
                     var itemType = (ItemType)random.Next(Enum.GetValues(typeof(ItemType)).Length);
                     var item = CreateItem(itemType);
-                    map[monsterX, monsterY].Item = item;
+                    map[monsterY, monsterX].Item = item;
                     AddMessage($"The {monster.Name} dropped {item.Name}!", MessageType.Loot);
                 }
             }
@@ -1734,7 +1731,7 @@
 
     private async Task ShowStairsDialog()
     {
-        string direction = map[player.X, player.Y].Type == TileType.Stairs ? "descend" : "ascend";
+        string direction = map[player.Y, player.X].Type == TileType.Stairs ? "descend" : "ascend";
         int newLevel = direction == "descend" ? currentLevel + 1 : currentLevel - 1;
 
         var confirmed = await JSRuntime.InvokeAsync<bool>(
@@ -1771,11 +1768,11 @@
 
         // Generate new level
         map = new Tile[MapHeight, MapWidth];
-        for (int y = 0; y < MapWidth; y++)
+        for (int y = 0; y < MapHeight; y++)
         {
-            for (int x = 0; x < MapHeight; x++)
+            for (int x = 0; x < MapWidth; x++)
             {
-                map[x, y] = new Tile { Type = TileType.Wall };
+                map[y, x] = new Tile { Type = TileType.Wall };
             }
         }
         exploredTiles = new bool[MapHeight, MapWidth];
@@ -1810,9 +1807,9 @@
             {
                 for (int x = room.X; x < room.X + room.Width; x++)
                 {
-                    if (map[x, y].Monster != null)
+                    if (map[y, x].Monster != null)
                     {
-                        var monster = map[x, y].Monster;
+                        var monster = map[y, x].Monster;
                         // Increase monster stats by 10% per level
                         float multiplier = 1 + ((currentLevel - 1) * 0.1f);
                         monster.MinDamage = (int)(monster.MinDamage * multiplier);
@@ -1890,5 +1887,6 @@
         
         await GainExperience(explorationXP, "map exploration");
     }
+
 
 }
