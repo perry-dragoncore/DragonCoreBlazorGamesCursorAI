@@ -1,15 +1,150 @@
 @page "/dungeon"
 @using Microsoft.JSInterop
 @using System.Text.Json
+@using System.Collections.Concurrent
 @inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <link href="css/dungeon.css" rel="stylesheet" />
 
+<audio id="bgMusic" loop>
+    <source src="sounds/dungeon-background.mp3" type="audio/mp3">
+</audio>
+
+<audio id="startGameSound">
+    <source src="sounds/game-start.mp3" type="audio/mp3">
+</audio>
+
+<audio id="attackSound">
+    <source src="sounds/attack.mp3" type="audio/mp3">
+</audio>
+
+<audio id="itemPickupSound">
+    <source src="sounds/item-pickup.mp3" type="audio/mp3">
+</audio>
+
+<audio id="playerHitSound">
+    <source src="sounds/player-hit.mp3" type="audio/mp3">
+</audio>
+
+<audio id="bgMusic" preload="auto" loop>
+    <source src="sounds/dungeon-background.mp3" type="audio/mpeg">
+</audio>
+
+@code {
+    private bool isMusicPlaying = false;
+    private bool showMagnifier = true;
+    private bool isSpecialPulse = false;
+    private bool isDangerPulse = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("focusElement", gameBoardRef);
+            await PlaySound("startGameSound");
+            await PlayBackgroundMusic();
+            await JSRuntime.InvokeVoidAsync("playBackgroundMusic", 0.3);
+        }
+    }
+
+    private async Task PlayBackgroundMusic()
+    {
+        if (!isMusicPlaying)
+        {
+            await JSRuntime.InvokeVoidAsync("playAudio", "bgMusic");
+            isMusicPlaying = true;
+        }
+    }
+
+    private async Task PlaySound(string soundId)
+    {
+        await JSRuntime.InvokeVoidAsync("playAudio", soundId);
+    }
+
+    // Call these methods when appropriate actions occur:
+    private async Task PlayAttackSound() => await PlaySound("attackSound");
+    private async Task PlayItemPickupSound() => await PlaySound("itemPickupSound");
+    private async Task PlayPlayerHitSound() => await PlaySound("playerHitSound");
+
+    private async Task ToggleMusic()
+    {
+        await JSRuntime.InvokeVoidAsync("toggleBackgroundMusic");
+    }
+
+    public void Dispose()
+    {
+        // Stop background music when component is disposed
+        if (isMusicPlaying)
+        {
+            JSRuntime.InvokeVoidAsync("stopAudio", "bgMusic");
+        }
+
+        timer?.Stop();
+        timer?.Dispose();
+        gameTimer?.Stop();
+        gameTimer?.Dispose();
+    }
+
+    private void ToggleMagnifier()
+    {
+        showMagnifier = !showMagnifier;
+        StateHasChanged();
+    }
+
+    // Add this new method for shortened bonus display
+    private string GetItemBonusShort(Item item)
+    {
+        if (item == null) return "";
+        return item.Type switch
+        {
+            ItemType.Weapon => $"(+{item.Bonus})",
+            ItemType.Armor => $"(+{item.Bonus})",
+            _ => ""
+        };
+    }
+
+    private void HandlePulseEnd()
+    {
+        if (isSpecialPulse)
+        {
+            isSpecialPulse = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TriggerSpecialPulse()
+    {
+        isSpecialPulse = true;
+        StateHasChanged();
+
+        // Wait for animation to complete
+        await Task.Delay(1000); // 1 second to match the animation duration
+
+        isSpecialPulse = false;
+        StateHasChanged();
+    }
+
+    private async Task TriggerDangerPulse()
+    {
+        isDangerPulse = true;
+        StateHasChanged();
+
+        await Task.Delay(1000); // 1 second for the danger animation
+
+        isDangerPulse = false;
+        StateHasChanged();
+    }
+
+}
+
 <div class="game-container">
-    <div class="game-content">
-        <div class="game-header">
-            <h1><i class="fas fa-dungeon"></i> Dragon's Dungeon</h1>
+    <div class="game-header">
+        <div class="header-content">
+            <button id="musicToggle" class="music-btn" @onclick="ToggleMusic">
+                <i class="fas fa-volume-up"></i>
+            </button>
+            <h1 class="me-5"><i class="fas fa-dungeon"></i> Dragon's Dungeon</h1>
             <div class="debug-controls">
                 <label>
                     Item Chance (%):
@@ -28,21 +163,42 @@
                     <i class="fas fa-coins"></i> Gold: @player.Gold
                 </div>
                 <div class="stat">
-                    <i class="fas fa-sword"></i> Weapon: @(player.EquippedWeapon?.Name ?? "None") @(GetItemBonus(player.EquippedWeapon))
+                    <i class="fas fa-sword"></i> Weapon: @(player.EquippedWeapon?.Name ?? "None") @(GetItemBonusShort(player.EquippedWeapon))
                 </div>
                 <div class="stat">
-                    <i class="fas fa-shield"></i> Armor: @(player.EquippedArmor?.Name ?? "None") @(GetItemBonus(player.EquippedArmor))
+                    <i class="fas fa-shield"></i> Armor: @(player.EquippedArmor?.Name ?? "None") @(GetItemBonusShort(player.EquippedArmor))
                 </div>
                 <div class="stat">
-                    <i class="fas fa-dungeon"></i> Level: @currentLevel
+                    <i class="fas fa-star"></i> XP: @player.Experience
+                </div>
+                <div class="stat">
+                    <i class="fas fa-level-up-alt"></i> Level: @player.Level
                 </div>
             </div>
+            <button class="game-btn" @onclick="ToggleMagnifier">
+                <i class="fas fa-search"></i>
+            </button>
         </div>
+    </div>
 
+    <div class="game-content">
         <div class="game-board" tabindex="0" @onkeydown="HandleKeyPress" @ref="gameBoardRef">
-            @for (int y = 0; y < MapSize; y++)
+            <div class="dungeon-level">
+                <i class="fas fa-dungeon"></i> Level @currentLevel
+            </div>
+            
+            @if (player.HasLantern || player.HasTorch)
             {
-                @for (int x = 0; x < MapSize; x++)
+                <div class="light-source-indicator">
+                    <img src="@(player.HasLantern ? "images/lantern.gif" : "images/torch.gif")" 
+                         alt="@(player.HasLantern ? "Lantern" : "Torch")" />
+                    <div class="time-remaining">@lightSourceTimeRemaining s</div>
+                </div>
+            }
+
+            @for (int y = 0; y < MapHeight; y++)
+            {
+                @for (int x = 0; x < MapWidth; x++)
                 {
                     var tile = GetVisibleTile(x, y);
                     <div class="tile @GetTileClass(tile)" style="grid-column: @(x + 1); grid-row: @(y + 1);">
@@ -64,34 +220,100 @@
                     </div>
                 }
             }
-        </div>
-    </div>
-    <div class="sidebar">
-        <div class="message-log">
-            <h3>Messages</h3>
-            <div class="message-container">
-                @foreach (var message in messages)
-                {
-                    <div class="message @message.Type.ToString().ToLower()">
-                        @message.Text
-                    </div>
-                }
-            </div>
-        </div>
-        <div class="inventory">
-            <h3>Inventory</h3>
-            <div class="inventory-items">
-                @foreach (var item in GetSortedInventory())
-                {
-                    <div class="inventory-item @(IsItemEquipped(item) ? "equipped" : "")">
-                        <i class="@GetItemIcon(item)"></i>
-                        @item.Name @GetItemBonus(item)
-                        @if (IsItemEquipped(item))
+            <div class="magnifier @(showMagnifier ? "visible" : "hidden") @(isSpecialPulse ? "treasure-pulse" : "") @(isDangerPulse ? "danger-pulse" : "")">
+                <div class="magnifier-content">
+                    @{
+                        int viewRadius = 4; // This gives us a 9x9 grid centered on player
+                        for (int dy = -viewRadius; dy <= viewRadius; dy++)
                         {
-                            <span class="equipped-tag">Equipped</span>
+                            for (int dx = -viewRadius; dx <= viewRadius; dx++)
+                            {
+                                int x = player.X + dx;
+                                int y = player.Y + dy;
+                                string tileClass = "magnified-tile";
+                                
+                                // Calculate distance from center for circular clipping
+                                double distance = Math.Sqrt(dx * dx + dy * dy);
+                                if (distance <= viewRadius) // Only show tiles within the circle
+                                {
+                                    if (IsValidPosition(x, y))
+                                    {
+                                        var tile = GetVisibleTile(x, y);
+                                        tileClass += $" {GetTileClass(tile)}";
+                                        
+                                        <div class="@tileClass">
+                                            @if (x == player.X && y == player.Y)
+                                            {
+                                                <i class="fas fa-user player"></i>
+                                            }
+                                            else if (tile != null)
+                                            {
+                                                @if (tile.Monster != null)
+                                                {
+                                                    <i class="fas fa-dragon monster"></i>
+                                                }
+                                                else if (tile.Item != null)
+                                                {
+                                                    <i class="@GetItemIcon(tile.Item)"></i>
+                                                }
+                                                else if (tile.Type == TileType.Stairs || tile.Type == TileType.StairsUp)
+                                                {
+                                                    <i class="fas fa-stairs"></i>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="@(tileClass + " out-of-bounds")"></div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div style="visibility: hidden;"></div> // Invisible tile to maintain grid structure
+                                }
+                            }
                         }
-                    </div>
-                }
+                    }
+                </div>
+            </div>
+
+            @* Update the damage indicator positioning *@
+            @foreach (var indicator in damageIndicators)
+            {
+                <div class="damage-indicator @(indicator.IsPlayerDamage ? "player-damage" : "monster-damage")" 
+                     style="left: @(indicator.X * 17 + 8)px; top: @(indicator.Y * 17)px;">
+                    @(indicator.IsPlayerDamage ? "-" : "+")@indicator.Damage
+                </div>
+            }
+        </div>
+        <div class="sidebar">
+            <div class="message-log">
+                <h3>Messages</h3>
+                <div class="message-container">
+                    @foreach (var message in messages)
+                    {
+                        <div class="message @message.Type.ToString().ToLower()">
+                            @message.Text
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="inventory">
+                <h3>Inventory</h3>
+                <div class="inventory-items">
+                    @foreach (var item in GetSortedInventory())
+                    {
+                        <div class="inventory-item @(IsItemEquipped(item) ? "equipped" : "")">
+                            <i class="@GetItemIcon(item)"></i>
+                            @item.Name @GetItemBonus(item)
+                            @if (IsItemEquipped(item))
+                            {
+                                <span class="equipped-tag">Equipped</span>
+                            }
+                        </div>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -107,8 +329,10 @@
                 <i class="fas fa-skull"></i>
                 <p>You have been slain!</p>
                 <p class="stats">
+                    Level reached: @player.Level<br/>
+                    Experience earned: @player.Experience<br/>
                     Gold collected: @player.Gold<br/>
-                    Level reached: @currentLevel<br/>
+                    Dungeon level: @currentLevel<br/>
                     Time survived: @($"{gameTime / 60}:{gameTime % 60:00}")
                 </p>
             </div>
@@ -130,8 +354,9 @@
                         <tr>
                             <th>Rank</th>
                             <th>Result</th>
-                            <th>Gold</th>
                             <th>Level</th>
+                            <th>XP</th>
+                            <th>Gold</th>
                             <th>Time</th>
                             <th>Date</th>
                         </tr>
@@ -143,8 +368,9 @@
                             <tr>
                                 <td>#@(i + 1)</td>
                                 <td>@(entry.Victory ? "Victory" : "Defeated")</td>
-                                <td>@entry.Gold</td>
                                 <td>@entry.Level</td>
+                                <td>@entry.Experience</td>
+                                <td>@entry.Gold</td>
                                 <td>@($"{entry.Time / 60}:{entry.Time % 60:00}")</td>
                                 <td>@entry.Date.ToShortDateString()</td>
                             </tr>
@@ -159,7 +385,8 @@
 
 
 @code {
-    private const int MapSize = 64;
+    private const int MapHeight = 60;
+    private const int MapWidth = 60;
     private const int ViewRadius = 2;
     private ElementReference gameBoardRef;
     private System.Timers.Timer gameTimer;
@@ -179,6 +406,7 @@
         public bool Victory { get; set; }
         public int Gold { get; set; }
         public int Level { get; set; }
+        public int Experience { get; set; }
         public int Time { get; set; }
         public DateTime Date { get; set; }
     }
@@ -199,6 +427,16 @@
     private const int DefaultItemsPerRoom = 10; // Default 1 item per room when spawning
     private int itemsPerRoom = DefaultItemsPerRoom; // Adjustable items per room
 
+    private List<DamageIndicator> damageIndicators = new();
+    private class DamageIndicator
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Damage { get; set; }
+        public DateTime Created { get; set; }
+        public bool IsPlayerDamage { get; set; }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // Initialize empty collections first
@@ -208,19 +446,11 @@
         await InitializeGame();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await JSRuntime.InvokeVoidAsync("focusElement", gameBoardRef);
-        }
-    }
-
     private async Task InitializeGame()
     {
         player = new Player();
-        exploredTiles = new bool[MapSize, MapSize];
-        map = new Tile[MapSize, MapSize];
+        exploredTiles = new bool[MapHeight, MapWidth];
+        map = new Tile[MapHeight, MapWidth];
         
         GenerateLevel();
         StartTimer();
@@ -296,9 +526,9 @@
     {
         await InvokeAsync(async () =>
         {
-            for (int y = 0; y < MapSize; y++)
+            for (int y = 0; y < MapWidth; y++)
             {
-                for (int x = 0; x < MapSize; x++)
+                for (int x = 0; x < MapHeight; x++)
                 {
                     var monster = map[x, y].Monster;
                     if (monster != null)
@@ -338,10 +568,10 @@
     private void GenerateLevel()
     {
         // Initialize empty map
-        map = new Tile[MapSize, MapSize];
-        for (int y = 0; y < MapSize; y++)
+        map = new Tile[MapHeight, MapWidth];
+        for (int y = 0; y < MapWidth; y++)
         {
-            for (int x = 0; x < MapSize; x++)
+            for (int x = 0; x < MapHeight; x++)
             {
                 map[x, y] = new Tile { Type = TileType.Wall };
             }
@@ -367,8 +597,8 @@
         {
             int width = random.Next(minRoomSize, maxRoomSize);
             int height = random.Next(minRoomSize, maxRoomSize);
-            int x = random.Next(1, MapSize - width - 1);
-            int y = random.Next(1, MapSize - height - 1);
+            int x = random.Next(1, MapWidth - width - 1);
+            int y = random.Next(1, MapHeight - height - 1);
 
             var newRoom = new Room
             {
@@ -455,13 +685,13 @@
 
     private void PlaceStairs(List<Room> rooms)
     {
-        // Place stairs down in the last room (if not at max level)
+        // Place stairs down in the last room
         var lastRoom = rooms[rooms.Count - 1];
         int stairX = lastRoom.X + random.Next(1, lastRoom.Width - 1);
         int stairY = lastRoom.Y + random.Next(1, lastRoom.Height - 1);
         map[stairX, stairY] = new Tile { Type = TileType.Stairs };
 
-        // Optionally, place stairs up in first room if not on level 1
+        // Place stairs up in first room if not on level 1
         if (currentLevel > 1)
         {
             var firstRoom = rooms[0];
@@ -730,36 +960,39 @@
                 break;
         }
 
-        // Check if new position contains a monster
-        if (IsValidPosition(newX, newY) && map[newX, newY].Monster != null)
+        // First check if the new position is valid
+        if (IsValidPosition(newX, newY))
         {
-            // Attack the monster instead of moving
-            await PlayerAttackMonster(map[newX, newY].Monster, newX, newY);
-            return;
-        }
-
-        // Check if new position is valid, walkable, and not occupied by a monster
-        if (IsValidPosition(newX, newY) && 
-            map[newX, newY].Type != TileType.Wall && 
-            map[newX, newY].Monster == null)  // Check for monster
-        {
-            player.X = newX;
-            player.Y = newY;
-
-            // Update explored tiles after movement
-            UpdateExploredTiles();
-
-            // Check for items at new position
-            if (map[newX, newY].Item != null)
+            // Check if there's a monster at the new position
+            if (map[newX, newY].Monster != null)
             {
-                await CollectItem(map[newX, newY].Item);
-                map[newX, newY].Item = null;
+                // Attack the monster instead of moving
+                await PlayerAttackMonster(map[newX, newY].Monster, newX, newY);
+                return;
             }
 
-            // Check if player is on stairs
-            if (map[newX, newY].Type == TileType.Stairs)
+            // If no monster and position is walkable, proceed with movement
+            if (map[newX, newY].Type != TileType.Wall)
             {
-                await ShowStairsDialog();
+                player.X = newX;
+                player.Y = newY;
+
+                // Update explored tiles after movement
+                UpdateExploredTiles();
+
+                // Check for items at new position
+                if (map[newX, newY].Item != null)
+                {
+                    await CollectItem(map[newX, newY].Item);
+                    map[newX, newY].Item = null;
+                }
+
+                // Check if player is on any type of stairs
+                if (map[newX, newY].Type == TileType.Stairs || 
+                    map[newX, newY].Type == TileType.StairsUp)
+                {
+                    await ShowStairsDialog();
+                }
             }
         }
 
@@ -769,6 +1002,16 @@
 
     private async Task CollectItem(Item item)
     {
+        switch (item.Type)
+        {
+            case ItemType.HealthPotion:
+            case ItemType.Gold:
+            case ItemType.Weapon when item.Bonus > 2: // Special weapons
+            case ItemType.Armor when item.Bonus > 2:  // Special armor
+                await TriggerSpecialPulse();
+                break;
+        }
+
         switch (item.Type)
         {
             case ItemType.Trap:
@@ -833,11 +1076,18 @@
                 break;
 
             case ItemType.Torch:
-                player.HasTorch = true;
-                player.HasLantern = false; // Remove lantern if we had one
-                lightSourceTimeRemaining = TorchDuration;
-                player.Inventory.Add(item);
-                AddMessage($"You light a torch! It will burn for {TorchDuration} seconds.", MessageType.Loot);
+                if (!player.HasLantern) // Only pick up torch if we don't have a lantern
+                {
+                    player.HasTorch = true;
+                    player.HasLantern = false;
+                    lightSourceTimeRemaining = TorchDuration;
+                    player.Inventory.Add(item);
+                    AddMessage($"You light a torch! It will burn for {TorchDuration} seconds.", MessageType.Loot);
+                }
+                else
+                {
+                    AddMessage("You already have a better light source.", MessageType.Info);
+                }
                 break;
 
             case ItemType.Lantern:
@@ -881,6 +1131,8 @@
 
     private async Task HandleTrap(Item trap)
     {
+        await TriggerDangerPulse();
+
         switch (trap.Bonus)
         {
             case -1: // Memory Loss
@@ -900,7 +1152,7 @@
 
     private void ResetFogOfWar()
     {
-        exploredTiles = new bool[MapSize, MapSize];
+        exploredTiles = new bool[MapHeight, MapWidth];
         UpdateExploredTiles(); // Only reveal current visible area
     }
 
@@ -973,6 +1225,7 @@
             TileType.Floor => "floor",
             TileType.Door => "door",
             TileType.Stairs => "stairs",
+            TileType.StairsUp => "stairs-up",
             _ => "floor"
         };
     }
@@ -992,14 +1245,6 @@
         };
     }
 
-    public void Dispose()
-    {
-        timer?.Stop();
-        timer?.Dispose();
-        gameTimer?.Stop();
-        gameTimer?.Dispose();
-    }
-
     private class Player
     {
         public int X { get; set; }
@@ -1012,6 +1257,8 @@
         public Weapon EquippedWeapon { get; set; }
         public Armor EquippedArmor { get; set; }
         public List<Item> Inventory { get; set; } = new();
+        public int Experience { get; set; } = 0;
+        public int Level { get; set; } = 1;
     }
 
     private class Tile
@@ -1081,7 +1328,7 @@
 
     private bool IsValidPosition(int x, int y)
     {
-        return x >= 0 && x < MapSize && y >= 0 && y < MapSize;
+        return x >= 0 && x < MapWidth && y >= 0 && y < MapHeight;
     }
 
     private async Task MoveMonsterTowardsPlayer(int currentX, int currentY, Monster monster)
@@ -1231,14 +1478,26 @@
                 AddMessage($"{monster.Name} hits you for {damage} damage!", MessageType.Combat);
             }
 
+            // Add damage indicator
+            damageIndicators.Add(new DamageIndicator
+            {
+                X = player.X,
+                Y = player.Y,
+                Damage = damage,
+                Created = DateTime.Now
+            });
+
             player.Health = Math.Max(0, player.Health - damage);
+
+            // Start cleanup timer for this indicator
+            _ = CleanupDamageIndicatorAfterDelay();
 
             // Check if player died
             if (player.Health <= 0)
             {
                 AddMessage("You have been slain!", MessageType.Danger);
                 await CheckGameOver();
-            }
+    }
         }
         else
         {
@@ -1260,14 +1519,15 @@
         }
         gameTime = 0;
         gameOver = false;
+        currentLevel = 1;  // Reset dungeon level to 1
         player = new Player();
-        exploredTiles = new bool[MapSize, MapSize];
-        map = new Tile[MapSize, MapSize];
-        messages.Clear(); // Clear all messages
+        exploredTiles = new bool[MapHeight, MapWidth];
+        map = new Tile[MapHeight, MapWidth];
+        messages.Clear();
         
         GenerateLevel();
-        StartTimer(); // Restart the game time timer
-        StartGameTimer(); // Restart the monster movement timer
+        StartTimer();
+        StartGameTimer();
         AddMessage("New game started!", MessageType.Info);
         StateHasChanged();
     }
@@ -1284,7 +1544,9 @@
         Info,
         Combat,
         Loot,
-        Danger
+        Danger,
+        Experience,
+        LevelUp
     }
 
     private void AddMessage(string text, MessageType type = MessageType.Info)
@@ -1308,16 +1570,18 @@
         {
             Victory = player.Health > 0,
             Gold = player.Gold,
-            Level = currentLevel,
+            Level = player.Level,
+            Experience = player.Experience,
             Time = gameTime,
             Date = DateTime.Now
         };
 
         leaderboard.Add(entry);
         leaderboard = leaderboard
-            .OrderByDescending(e => e.Gold) // Sort by gold collected
-            .ThenByDescending(e => e.Level) // Then by level reached
-            .ThenBy(e => e.Time) // Then by time (faster is better)
+            .OrderByDescending(e => e.Level)        // First by level reached
+            .ThenByDescending(e => e.Experience)    // Then by XP earned
+            .ThenByDescending(e => e.Gold)          // Then by gold collected
+            .ThenBy(e => e.Time)                    // Then by time (faster is better)
             .Take(MaxLeaderboardEntries)
             .ToList();
 
@@ -1366,6 +1630,19 @@
 
             monster.Health -= damage;
 
+            // Add damage indicator for monster
+            damageIndicators.Add(new DamageIndicator
+            {
+                X = monsterX,
+                Y = monsterY,
+                Damage = damage,
+                Created = DateTime.Now,
+                IsPlayerDamage = true
+            });
+
+            // Start cleanup timer for this indicator
+            _ = CleanupDamageIndicatorAfterDelay();
+
             // Show hit message
             string weaponName = player.EquippedWeapon?.Name ?? "bare hands";
             AddMessage($"You hit the {monster.Name} with your {weaponName} for {damage} damage!", MessageType.Combat);
@@ -1374,6 +1651,23 @@
             if (monster.Health <= 0)
             {
                 AddMessage($"You have slain the {monster.Name}!", MessageType.Combat);
+                
+                // Calculate XP based on monster type and current dungeon level
+                int xpGain = XP_MONSTER_BASE;
+                switch (monster.Name.ToLower())
+                {
+                    case "dragon":
+                        xpGain *= 3;
+                        break;
+                    case "goblin":
+                        xpGain *= 2;
+                        break;
+                    // default rat gives base XP
+                }
+                xpGain = (int)(xpGain * (1 + (currentLevel - 1) * 0.1)); // 10% more XP per dungeon level
+                
+                await GainExperience(xpGain, $"defeating {monster.Name}");
+                
                 map[monsterX, monsterY].Monster = null;
 
                 // Chance to drop loot
@@ -1440,14 +1734,22 @@
 
     private async Task ShowStairsDialog()
     {
+        string direction = map[player.X, player.Y].Type == TileType.Stairs ? "descend" : "ascend";
+        int newLevel = direction == "descend" ? currentLevel + 1 : currentLevel - 1;
+
         var confirmed = await JSRuntime.InvokeAsync<bool>(
             "confirm", 
-            $"Do you want to descend to level {currentLevel + 1}?"
+            $"Do you want to {direction} to level {newLevel}?"
         );
 
         if (confirmed)
         {
-            await ChangeLevel(currentLevel + 1);
+            if (direction == "descend")
+            {
+                await GainExperience(XP_STAIRS_FOUND, "finding the stairs");
+                await CalculateExplorationXP();
+            }
+            await ChangeLevel(newLevel);
         }
     }
 
@@ -1468,15 +1770,15 @@
         var savedLightSourceTimeRemaining = lightSourceTimeRemaining;
 
         // Generate new level
-        map = new Tile[MapSize, MapSize];
-        for (int y = 0; y < MapSize; y++)
+        map = new Tile[MapHeight, MapWidth];
+        for (int y = 0; y < MapWidth; y++)
         {
-            for (int x = 0; x < MapSize; x++)
+            for (int x = 0; x < MapHeight; x++)
             {
                 map[x, y] = new Tile { Type = TileType.Wall };
             }
         }
-        exploredTiles = new bool[MapSize, MapSize];
+        exploredTiles = new bool[MapHeight, MapWidth];
         
         // Generate new dungeon layout
         GenerateLevel();
@@ -1531,4 +1833,62 @@
         // to store the room list or implement a way to find rooms
         return rooms;
     }
+
+    // Add this method to clean up old damage indicators
+    private async Task CleanupDamageIndicatorAfterDelay()
+    {
+        await Task.Delay(1500); // Increased from 1000 to 1500 to match animation
+        damageIndicators.RemoveAll(di => (DateTime.Now - di.Created).TotalSeconds >= 1.5);
+        StateHasChanged();
+    }
+
+    // Add XP constants
+    private const int XP_MONSTER_BASE = 50;  // Base XP for monsters
+    private const int XP_STAIRS_FOUND = 100; // XP for finding stairs
+    private const int XP_MAP_REVEAL = 200;   // Max XP for revealing the whole map
+
+    // Add XP gain methods
+    private async Task GainExperience(int amount, string reason = "")
+    {
+        player.Experience += amount;
+        AddMessage($"Gained {amount} XP" + (!string.IsNullOrEmpty(reason) ? $" for {reason}!" : "!"), MessageType.Experience);
+        await CheckLevelUp();
+    }
+
+    private async Task CheckLevelUp()
+    {
+        int xpNeeded = player.Level * 1000; // Simple level scaling
+        if (player.Experience >= xpNeeded)
+        {
+            player.Level++;
+            player.MaxHealth += 20; // Health increase per level
+            player.Health = player.MaxHealth; // Heal on level up
+            AddMessage($"Level Up! You are now level {player.Level}!", MessageType.LevelUp);
+            AddMessage($"Your maximum health increased to {player.MaxHealth}!", MessageType.LevelUp);
+        }
+    }
+
+    // Add map exploration XP calculation
+    private async Task CalculateExplorationXP()
+    {
+        int totalTiles = MapHeight * MapWidth;
+        int exploredCount = 0;
+        
+        for (int y = 0; y < MapWidth; y++)
+        {
+            for (int x = 0; x < MapHeight; x++)
+            {
+                if (exploredTiles[x, y])  // Using the existing exploredTiles array
+                {
+                    exploredCount++;
+                }
+            }
+        }
+
+        float explorationPercentage = (float)exploredCount / totalTiles;
+        int explorationXP = (int)(XP_MAP_REVEAL * explorationPercentage);
+        
+        await GainExperience(explorationXP, "map exploration");
+    }
+
 }

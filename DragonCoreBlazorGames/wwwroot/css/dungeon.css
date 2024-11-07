@@ -1,23 +1,35 @@
 :root {
-    --tile-size: 14px;
+    --tile-size: 16px;
 }
 .game-container {
-    display: grid;
-    grid-template-columns: auto 300px;
-    gap: 20px;
-    padding: 20px;
-    max-width: 1500px;
-    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 .game-content {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: auto 300px;
     gap: 20px;
+    /* padding: 20px; */
+    max-width: 1500px;
+    margin: 0 auto;
+    width: 100%;
 }
 
 .game-header {
+    background: #2c3e50;
+    padding: 20px;
     width: 100%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.header-content {
+    max-width: 1500px;
+    margin: 0 auto;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -43,6 +55,7 @@
     display: flex;
     gap: 20px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .stat {
@@ -52,6 +65,7 @@
     background: rgba(255, 255, 255, 0.1);
     padding: 5px 10px;
     border-radius: 4px;
+    white-space: nowrap;
 }
 
 .stat i {
@@ -59,9 +73,10 @@
 }
 
 .game-board {
+    position: relative;
     display: grid;
-    grid-template-columns: repeat(64, var(--tile-size));
-    grid-template-rows: repeat(64, var(--tile-size)); 
+    grid-template-columns: repeat(80, var(--tile-size));
+    grid-template-rows: repeat(48, var(--tile-size));
     gap: 1px;
     background: #34495e;
     padding: 10px;
@@ -76,6 +91,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.3s ease-in-out;
 }
 
 .tile.wall {
@@ -101,9 +117,14 @@
     background: #2980b9;
 }
 
+.tile.stairs-up {
+    background: #27ae60;
+}
+
 .tile.fog {
-    background: rgba(44, 62, 80, 0.8);
+    background: rgba(44, 62, 80, 0.95);
     position: relative;
+    transition: background-color 0.3s ease-in-out;
 }
 
 .tile.fog::after {
@@ -118,6 +139,7 @@
         rgba(0, 0, 0, 0.1),
         rgba(0, 0, 0, 0.3)
     );
+    transition: opacity 0.3s ease-in-out;
 }
 
 .tile i {
@@ -283,8 +305,6 @@
     padding: 15px;
     border-radius: 8px;
     color: white;
-    height: 400px;
-    overflow-y: auto;
 }
 
 .message-log h3 {
@@ -295,6 +315,9 @@
 }
 
 .message-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 10px;
     display: flex;
     flex-direction: column;
     gap: 5px;
@@ -421,4 +444,318 @@
 .message.heal {
     background: rgba(46, 204, 113, 0.2); /* Green background for healing messages */
     color: #2ecc71;
+}
+
+/* Scrollbar styling for message container */
+.message-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.message-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.message-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+.music-btn {
+    background: none;
+    border: none;
+    color: #ffd700;
+    font-size: 1.5em;
+    cursor: pointer;
+    padding: 10px;
+    transition: all 0.3s ease;
+}
+
+.music-btn:hover {
+    transform: scale(1.1);
+    color: #fff;
+}
+
+.music-btn:focus {
+    outline: none;
+}
+
+.magnifier {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 200px;
+    height: 200px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 3px solid #ffd700;
+    border-radius: 50%;
+    overflow: hidden;
+    transition: opacity 0.3s ease;
+    z-index: 1000;
+    box-shadow: 
+        inset 0 0 20px rgba(255, 215, 0, 0.2),
+        0 0 15px rgba(255, 215, 0, 0.3);
+    animation: subtlePulse 3s ease-in-out infinite;
+}
+
+.magnifier.treasure-pulse {
+    animation: treasurePulse 1s ease-in-out;
+}
+
+.magnifier::before {
+    content: '';
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 120%;
+    height: 120%;
+    background: radial-gradient(
+        circle at 30% 30%,
+        rgba(255, 255, 255, 0.1) 0%,
+        rgba(255, 255, 255, 0.05) 20%,
+        transparent 60%
+    );
+    pointer-events: none;
+}
+
+.magnifier.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.magnifier.visible {
+    opacity: 1;
+}
+
+.magnifier-content {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    width: 120%;
+    height: 120%;
+    gap: 1px;
+    position: relative;
+    top: -10%;
+    left: -10%;
+}
+
+.magnified-tile {
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.magnified-tile i {
+    font-size: 14px;
+    color: white;
+    z-index: 1;
+}
+
+.magnified-tile.wall {
+    background: repeating-linear-gradient(
+        45deg,
+        #4a4a4a,
+        #4a4a4a 3px,
+        #3a3a3a 3px,
+        #3a3a3a 6px
+    );
+}
+
+.magnified-tile.floor {
+    background: #95a5a6;
+}
+
+.magnified-tile.out-of-bounds {
+    background: #2c3e50;
+}
+
+.magnified-tile.player-position {
+    background: #e74c3c;
+}
+
+.magnified-tile.monster-position {
+    background: #c0392b;
+}
+
+.magnified-tile.stairs {
+    background: #2980b9;
+}
+
+@keyframes floatUp {
+    0% {
+        transform: translateY(0) translateX(-50%);
+        opacity: 1;
+    }
+    20% {
+        transform: translateY(-5px) translateX(-50%);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-40px) translateX(-50%);
+        opacity: 0;
+    }
+}
+
+.damage-indicator {
+    position: absolute;
+    font-weight: bold;
+    font-size: 14px;
+    pointer-events: none;
+    animation: floatUp 1.5s ease-out forwards;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    text-align: center;
+    width: var(--tile-size);
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.damage-indicator.monster-damage {
+    color: #ff4444; /* Red for damage taken */
+}
+
+.damage-indicator.player-damage {
+    color: #ffff00; /* Yellow for damage dealt */
+}
+
+@keyframes floatUp {
+    0% {
+        transform: translateY(0) translateX(-50%);
+        opacity: 1;
+    }
+    20% {
+        transform: translateY(-5px) translateX(-50%);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-40px) translateX(-50%);
+        opacity: 0;
+    }
+}
+
+@keyframes subtlePulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+    }
+    50% {
+        transform: scale(1.02);
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+    }
+}
+
+@keyframes treasurePulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+    }
+}
+
+@keyframes dangerPulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
+        border-color: #ff4444;
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 30px rgba(255, 0, 0, 0.6);
+        border-color: #ff0000;
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
+        border-color: #ff4444;
+    }
+}
+
+.magnifier.danger-pulse {
+    animation: dangerPulse 1s ease-in-out;
+    border-color: #ff4444;
+}
+
+/* Add styling for XP messages */
+.message.experience {
+    background: rgba(255, 215, 0, 0.2);
+    color: #ffd700;
+}
+
+.message.levelup {
+    background: rgba(255, 215, 0, 0.3);
+    color: #ffd700;
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.dungeon-level {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #ffd700;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    border: 1px solid #ffd700;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.dungeon-level i {
+    color: #ffd700;
+}
+
+.light-source-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ffd700;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.light-source-indicator img {
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
+}
+
+.time-remaining {
+    color: #ffd700;
+    font-size: 1em;
+    margin-top: 4px;
+    font-weight: bold;
+}
+
+.tile.explored {
+    background: rgba(44, 62, 80, 0.6);
+    transition: background-color 0.3s ease-in-out;
+}
+
+.tile.visible {
+    background: transparent;
+    transition: background-color 0.3s ease-in-out;
 }
