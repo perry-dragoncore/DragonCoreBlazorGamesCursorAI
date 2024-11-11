@@ -1,0 +1,728 @@
+@page "/tanks"
+@using Microsoft.JSInterop
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+
+<link href="/css/tanks.css" rel="stylesheet" />
+
+<div class="game-container">
+    <div class="fps-counter">FPS: @currentFPS</div>
+    <div class="game-header">
+        <div class="player-stats">
+            <div class="player player1">
+                <span class="player-name">Player 1</span>
+                <div class="lives">@(new string('❤', player1Lives))</div>
+                <div class="health">HP: @player1Health</div>
+            </div>
+            <div class="player player2">
+                <span class="player-name">Player 2</span>
+                <div class="lives">@(new string('❤', player2Lives))</div>
+                <div class="health">HP: @player2Health</div>
+            </div>
+        </div>
+    </div>
+
+    <canvas @ref="canvas" width="600" height="600" 
+            tabindex="0" 
+            @onkeydown="HandleKeyDown" 
+            @onkeyup="HandleKeyUp"
+            style="background: #000;">
+    </canvas>
+
+    <div class="controls-legend">
+        <div class="controls-section player1-controls">
+            <h3>Player 1 Controls</h3>
+            <ul>
+                <li><span class="key">W</span> Move Forward</li>
+                <li><span class="key">A</span> Rotate Left</li>
+                <li><span class="key">D</span> Rotate Right</li>
+                <li><span class="key">Space</span> Shoot</li>
+            </ul>
+        </div>
+        <div class="controls-section player2-controls">
+            <h3>AI Player</h3>
+            <p>Computer controlled opponent</p>
+        </div>
+    </div>
+
+    @if (gameOver)
+    {
+        <div class="game-over">
+            <h2>Game Over!</h2>
+            <p>@(player1Lives > 0 ? "Player 1" : "Player 2") Wins!</p>
+            <button class="game-btn" @onclick="@(async () => await RestartGame())">Play Again</button>
+        </div>
+    }
+</div>
+
+@code {
+    private ElementReference canvas;
+    private IJSObjectReference? gameModule;
+    private DotNetObjectReference<Tanks>? dotNetHelper;
+    private System.Timers.Timer? gameTimer;
+    private const int TileSize = 30;
+    private const int MapWidth = 20;
+    private const int MapHeight = 20;
+    private const float TankSpeed = 0.08f;
+    private const float BulletSpeed = 0.15f;
+    private const int RotationSpeed = 3;
+    private const int MaxHealth = 100;
+    private const int BulletDamage = 25;
+
+    private bool gameOver = false;
+    private int[,] map = new int[MapHeight, MapWidth];
+    private List<Bullet> bullets = new();
+    private HashSet<string> pressedKeys = new();
+
+    private Tank player1 = new();
+    private Tank player2 = new();
+    private int player1Lives = 3;
+    private int player2Lives = 3;
+    private int player1Health = MaxHealth;
+    private int player2Health = MaxHealth;
+
+    private const float AIUpdateInterval = 0.1f; // Seconds between AI decisions
+    private DateTime lastAIUpdate = DateTime.Now;
+    private Random random = new Random();
+
+    private class LeaderboardEntry
+    {
+        public string PlayerName { get; set; } = "Player";
+        public TimeSpan Duration { get; set; }
+        public int HealthRemaining { get; set; }
+        public DateTime Date { get; set; }
+    }
+
+    private List<LeaderboardEntry> leaderboard = new();
+    private DateTime gameStartTime;
+    private bool showLeaderboard = false;
+
+    private int currentFPS = 0;
+    private DateTime lastFPSUpdate = DateTime.Now;
+    private int frameCount = 0;
+
+    private async Task LoadLeaderboard()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "tanks-leaderboard");
+            if (!string.IsNullOrEmpty(json))
+            {
+                leaderboard = JsonSerializer.Deserialize<List<LeaderboardEntry>>(json) ?? new();
+            }
+        }
+        catch
+        {
+            leaderboard = new();
+        }
+    }
+
+    private async Task SaveLeaderboard()
+    {
+        var json = JsonSerializer.Serialize(leaderboard);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "tanks-leaderboard", json);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                gameModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/tanks.js");
+                dotNetHelper = DotNetObjectReference.Create(this);
+                await gameModule.InvokeVoidAsync("initGame", canvas, dotNetHelper);
+                await InitializeGame();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing game: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task InitializeGame()
+    {
+        await LoadLeaderboard();
+        gameStartTime = DateTime.Now;
+        GenerateMap();
+        InitializePlayers();
+        await StartGameTimer();
+        await RenderFrame();
+    }
+
+    private async Task StartGameTimer()
+    {
+        gameTimer = new System.Timers.Timer(1000.0 / 60); // 60 FPS
+        gameTimer.Elapsed += async (sender, e) => await GameTick();
+        gameTimer.Start();
+    }
+
+    private async Task GameTick()
+    {
+        if (gameOver) return;
+
+        frameCount++;
+        var now = DateTime.Now;
+        var elapsed = (now - lastFPSUpdate).TotalSeconds;
+        
+        if (elapsed >= 0.1) // Update more frequently - every 100ms
+        {
+            currentFPS = (int)(frameCount / elapsed);
+            frameCount = 0;
+            lastFPSUpdate = now;
+        }
+
+        UpdateTankPositions();
+        UpdateAI();
+        UpdateBullets();
+        await CheckCollisions();
+        await RenderFrame();
+    }
+
+    private async Task RenderFrame()
+    {
+        if (gameModule != null)
+        {
+            // Convert 2D array to jagged array for serialization
+            var serializedMap = new int[MapHeight][];
+            for (int i = 0; i < MapHeight; i++)
+            {
+                serializedMap[i] = new int[MapWidth];
+                for (int j = 0; j < MapWidth; j++)
+                {
+                    serializedMap[i][j] = map[i, j];
+                }
+            }
+
+            var gameState = new
+            {
+                map = serializedMap,
+                player1 = player1,
+                player2 = player2,
+                bullets = bullets,
+                fps = currentFPS
+            };
+
+            await gameModule.InvokeVoidAsync("renderGame", gameState);
+        }
+    }
+
+    private void GenerateMap()
+    {
+        // Clear the map first
+        for (int y = 0; y < MapHeight; y++)
+        {
+            for (int x = 0; x < MapWidth; x++)
+            {
+                map[y, x] = 0;
+            }
+        }
+
+        // Create border walls
+        for (int y = 0; y < MapHeight; y++)
+        {
+            map[y, 0] = 1;
+            map[y, MapWidth - 1] = 1;
+        }
+        for (int x = 0; x < MapWidth; x++)
+        {
+            map[0, x] = 1;
+            map[MapHeight - 1, x] = 1;
+        }
+
+        // Generate obstacles for left half of the map
+        int halfWidth = MapWidth / 2;
+        
+        // Add some strategic wall formations
+        // Large blocks
+        for (int i = 0; i < 3; i++)
+        {
+            int blockX = Random.Shared.Next(3, halfWidth - 3);
+            int blockY = Random.Shared.Next(3, MapHeight - 3);
+            
+            // Create 2x2 blocks
+            map[blockY, blockX] = 1;
+            map[blockY + 1, blockX] = 1;
+            map[blockY, blockX + 1] = 1;
+            map[blockY + 1, blockX + 1] = 1;
+        }
+
+        // Add some single walls
+        for (int i = 0; i < 4; i++)
+        {
+            int wallX = Random.Shared.Next(3, halfWidth - 2);
+            int wallY = Random.Shared.Next(3, MapHeight - 3);
+            map[wallY, wallX] = 1;
+        }
+
+        // Add some L-shaped walls
+        for (int i = 0; i < 2; i++)
+        {
+            int lX = Random.Shared.Next(3, halfWidth - 3);
+            int lY = Random.Shared.Next(3, MapHeight - 3);
+            map[lY, lX] = 1;
+            map[lY + 1, lX] = 1;
+            map[lY, lX + 1] = 1;
+        }
+
+        // Mirror the left half to the right half
+        for (int y = 0; y < MapHeight; y++)
+        {
+            for (int x = 0; x < halfWidth; x++)
+            {
+                map[y, MapWidth - 1 - x] = map[y, x];
+            }
+        }
+
+        // Ensure spawn areas are clear
+        ClearSpawnArea(3, 3, 3); // Clear left spawn
+        ClearSpawnArea(MapWidth - 6, 3, 3); // Clear right spawn
+    }
+
+    private void ClearSpawnArea(int startX, int startY, int size)
+    {
+        for (int y = startY; y < startY + size && y < MapHeight - 1; y++)
+        {
+            for (int x = startX; x < startX + size && x < MapWidth - 1; x++)
+            {
+                if (x > 0 && x < MapWidth - 1 && y > 0 && y < MapHeight - 1)
+                {
+                    map[y, x] = 0;
+                }
+            }
+        }
+    }
+
+    private void InitializePlayers()
+    {
+        SpawnTank(1);
+        SpawnTank(2);
+    }
+
+    private void SpawnTank(int playerNumber)
+    {
+        float tankSize = 0.8f; // Tank size relative to tile size
+        float halfSize = tankSize / 2;
+        
+        while (true)
+        {
+            int x = Random.Shared.Next(2, MapWidth - 2); // Start further from edges
+            int y = Random.Shared.Next(2, MapHeight - 2);
+
+            // Check a larger area around the spawn point to ensure enough clearance
+            bool hasSpace = true;
+            for (int checkY = y - 1; checkY <= y + 1; checkY++)
+            {
+                for (int checkX = x - 1; checkX <= x + 1; checkX++)
+                {
+                    if (checkX < 0 || checkX >= MapWidth || 
+                        checkY < 0 || checkY >= MapHeight || 
+                        map[checkY, checkX] == 1)
+                    {
+                        hasSpace = false;
+                        break;
+                    }
+                }
+                if (!hasSpace) break;
+            }
+
+            if (hasSpace)
+            {
+                if (playerNumber == 1)
+                {
+                    player1 = new Tank { X = x, Y = y, Rotation = 0 };
+                    player1Health = MaxHealth;
+                }
+                else
+                {
+                    player2 = new Tank { X = x, Y = y, Rotation = 180 };
+                    player2Health = MaxHealth;
+                }
+                break;
+            }
+        }
+    }
+
+    private void UpdateTankPositions()
+    {
+        // Player 1 controls (WASD)
+        if (pressedKeys.Contains("KeyA")) player1.Rotation -= RotationSpeed;
+        if (pressedKeys.Contains("KeyD")) player1.Rotation += RotationSpeed;
+        if (pressedKeys.Contains("KeyW"))
+        {
+            float radians = player1.Rotation * (float)Math.PI / 180f;
+            float newX = player1.X + (float)Math.Sin(radians) * TankSpeed;
+            float newY = player1.Y - (float)Math.Cos(radians) * TankSpeed;
+            if (CanMoveTo(newX, newY)) 
+            {
+                player1.X = newX;
+                player1.Y = newY;
+            }
+        }
+
+        // Player 2 controls (Arrow keys)
+        if (pressedKeys.Contains("ArrowLeft")) player2.Rotation -= RotationSpeed;
+        if (pressedKeys.Contains("ArrowRight")) player2.Rotation += RotationSpeed;
+        if (pressedKeys.Contains("ArrowUp"))
+        {
+            float radians = player2.Rotation * (float)Math.PI / 180f;
+            float newX = player2.X + (float)Math.Sin(radians) * TankSpeed;
+            float newY = player2.Y - (float)Math.Cos(radians) * TankSpeed;
+            if (CanMoveTo(newX, newY))
+            {
+                player2.X = newX;
+                player2.Y = newY;
+            }
+        }
+    }
+
+    private bool CanMoveTo(float x, float y)
+    {
+        float tankSize = 0.8f; // Tank size relative to tile size
+        float halfSize = tankSize / 2;
+        
+        // Check all four corners of the tank
+        var corners = new[]
+        {
+            (x - halfSize, y - halfSize),
+            (x + halfSize, y - halfSize),
+            (x - halfSize, y + halfSize),
+            (x + halfSize, y + halfSize)
+        };
+
+        foreach (var (cornerX, cornerY) in corners)
+        {
+            int tileX = (int)Math.Floor(cornerX);
+            int tileY = (int)Math.Floor(cornerY);
+            
+            if (tileX < 0 || tileX >= MapWidth || 
+                tileY < 0 || tileY >= MapHeight || 
+                map[tileY, tileX] == 1)
+            {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    private async Task CreateBulletImpact(float x, float y, int playerNumber)
+    {
+        if (gameModule != null)
+        {
+            await gameModule.InvokeVoidAsync("createBulletImpact", x, y, playerNumber);
+        }
+    }
+
+    private async Task CreateTankExplosion(float x, float y, int playerNumber)
+    {
+        if (gameModule != null)
+        {
+            await gameModule.InvokeVoidAsync("createTankExplosion", x, y, playerNumber);
+        }
+    }
+
+    private void UpdateBullets()
+    {
+        for (int i = bullets.Count - 1; i >= 0; i--)
+        {
+            var bullet = bullets[i];
+            float radians = bullet.Rotation * (float)Math.PI / 180f;
+            float newX = bullet.X + (float)Math.Sin(radians) * BulletSpeed;
+            float newY = bullet.Y - (float)Math.Cos(radians) * BulletSpeed;
+
+            // Check if bullet hits a wall
+            int tileX = (int)Math.Floor(newX);
+            int tileY = (int)Math.Floor(newY);
+
+            if (tileX < 0 || tileX >= MapWidth || 
+                tileY < 0 || tileY >= MapHeight || 
+                map[tileY, tileX] == 1)
+            {
+                _ = CreateBulletImpact(bullet.X, bullet.Y, bullet.PlayerNumber);
+                bullets.RemoveAt(i);
+            }
+            else
+            {
+                bullet.X = newX;
+                bullet.Y = newY;
+            }
+        }
+    }
+
+    private async Task CheckCollisions()
+    {
+        float hitboxSize = 0.6f;
+
+        for (int i = bullets.Count - 1; i >= 0; i--)
+        {
+            var bullet = bullets[i];
+            
+            // Check collision with player 1
+            if (bullet.PlayerNumber == 2 && 
+                Math.Abs(bullet.X - player1.X) < hitboxSize && 
+                Math.Abs(bullet.Y - player1.Y) < hitboxSize)
+            {
+                await CreateBulletImpact(bullet.X, bullet.Y, 1);
+                player1Health -= BulletDamage;
+                bullets.RemoveAt(i);
+
+                if (player1Health <= 0)
+                {
+                    await CreateTankExplosion(player1.X, player1.Y, 1);
+                    player1Lives--;
+                    if (player1Lives > 0)
+                    {
+                        SpawnTank(1);
+                        player1Health = MaxHealth;
+                    }
+                    else
+                    {
+                        await HandleGameOver(false);
+                    }
+                }
+                continue;
+            }
+            
+            // Check collision with player 2
+            if (bullet.PlayerNumber == 1 && 
+                Math.Abs(bullet.X - player2.X) < hitboxSize && 
+                Math.Abs(bullet.Y - player2.Y) < hitboxSize)
+            {
+                await CreateBulletImpact(bullet.X, bullet.Y, 2);
+                player2Health -= BulletDamage;
+                bullets.RemoveAt(i);
+
+                if (player2Health <= 0)
+                {
+                    await CreateTankExplosion(player2.X, player2.Y, 2);
+                    player2Lives--;
+                    if (player2Lives > 0)
+                    {
+                        SpawnTank(2);
+                        player2Health = MaxHealth;
+                    }
+                    else
+                    {
+                        await HandleGameOver(true);
+                    }
+                }
+                continue;
+            }
+
+            // Wall collisions
+            int tileX = (int)Math.Floor(bullet.X);
+            int tileY = (int)Math.Floor(bullet.Y);
+            if (tileX < 0 || tileX >= MapWidth || 
+                tileY < 0 || tileY >= MapHeight || 
+                map[tileY, tileX] == 1)
+            {
+                _ = CreateBulletImpact(bullet.X, bullet.Y, bullet.PlayerNumber);
+                bullets.RemoveAt(i);
+            }
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        pressedKeys.Add(e.Code);
+
+        // Player 1 shoot (Space)
+        if (e.Code == "Space" && !gameOver && 
+            (DateTime.Now - player1.LastShot).TotalSeconds >= 0.5)
+        {
+            bullets.Add(new Bullet 
+            { 
+                X = player1.X, 
+                Y = player1.Y, 
+                Rotation = player1.Rotation,
+                PlayerNumber = 1
+            });
+            player1.LastShot = DateTime.Now;
+        }
+
+        // Player 2 shoot (Enter)
+        if (e.Code == "Enter" && !gameOver && 
+            (DateTime.Now - player2.LastShot).TotalSeconds >= 0.7)
+        {
+            bullets.Add(new Bullet 
+            { 
+                X = player2.X, 
+                Y = player2.Y, 
+                Rotation = player2.Rotation,
+                PlayerNumber = 2
+            });
+            player2.LastShot = DateTime.Now;
+        }
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        pressedKeys.Remove(e.Code);
+    }
+
+    private async Task RestartGame()
+    {
+        // Reset game state
+        gameOver = false;
+        player1Lives = 3;
+        player2Lives = 3;
+        player1Health = MaxHealth;
+        player2Health = MaxHealth;
+        
+        // Clear collections
+        bullets.Clear();
+        pressedKeys.Clear();
+        
+        // Reset game timer
+        if (gameTimer != null)
+        {
+            gameTimer.Dispose();
+            gameTimer = null;
+        }
+        
+        // Reset start time for leaderboard
+        gameStartTime = DateTime.Now;
+        
+        // Generate new map and spawn tanks
+        GenerateMap();
+        InitializePlayers();
+        
+        // Restart game timer
+        await StartGameTimer();
+        
+        // Force UI update
+        StateHasChanged();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (gameModule is not null)
+        {
+            await gameModule.DisposeAsync();
+        }
+        dotNetHelper?.Dispose();
+    }
+
+    private void UpdateAI()
+    {
+        if ((DateTime.Now - lastAIUpdate).TotalSeconds < AIUpdateInterval) return;
+        lastAIUpdate = DateTime.Now;
+
+        // Calculate angle to player
+        float dx = player1.X - player2.X;
+        float dy = player1.Y - player2.Y;
+        float targetAngle = (float)(Math.Atan2(dx, -dy) * 180 / Math.PI);
+
+        // Normalize angles
+        while (targetAngle < 0) targetAngle += 360;
+        while (targetAngle >= 360) targetAngle -= 360;
+        while (player2.Rotation < 0) player2.Rotation += 360;
+        while (player2.Rotation >= 360) player2.Rotation -= 360;
+
+        // Calculate shortest rotation direction
+        float angleDiff = targetAngle - player2.Rotation;
+        if (angleDiff > 180) angleDiff -= 360;
+        if (angleDiff < -180) angleDiff += 360;
+
+        // Rotate towards player
+        if (Math.Abs(angleDiff) > RotationSpeed)
+        {
+            player2.Rotation += Math.Sign(angleDiff) * RotationSpeed;
+        }
+
+        // Move towards player if not too close
+        float distance = (float)Math.Sqrt(dx * dx + dy * dy);
+        if (distance > 5)
+        {
+            float radians = player2.Rotation * (float)Math.PI / 180f;
+            float newX = player2.X + (float)Math.Sin(radians) * TankSpeed;
+            float newY = player2.Y - (float)Math.Cos(radians) * TankSpeed;
+            if (CanMoveTo(newX, newY))
+            {
+                player2.X = newX;
+                player2.Y = newY;
+            }
+        }
+
+        // Shoot if facing player and enough time has passed
+        if (Math.Abs(angleDiff) < 10 && 
+            (DateTime.Now - player2.LastShot).TotalSeconds >= 0.7)
+        {
+            bullets.Add(new Bullet
+            {
+                X = player2.X,
+                Y = player2.Y,
+                Rotation = player2.Rotation,
+                PlayerNumber = 2
+            });
+            player2.LastShot = DateTime.Now;
+        }
+    }
+
+    private async Task HandleGameOver(bool playerWon)
+    {
+        if (gameOver) return; // Prevent multiple game over calls
+        
+        gameOver = true;
+        
+        // Stop and dispose the game timer
+        if (gameTimer != null)
+        {
+            gameTimer.Stop();
+            gameTimer.Dispose();
+            gameTimer = null;
+        }
+
+        // Clear any remaining bullets
+        bullets.Clear();
+        
+        // Clear pressed keys
+        pressedKeys.Clear();
+
+        // Handle leaderboard update if player won
+        if (playerWon)
+        {
+            var duration = DateTime.Now - gameStartTime;
+            var entry = new LeaderboardEntry
+            {
+                PlayerName = "Player 1",
+                Duration = duration,
+                HealthRemaining = player1Health,
+                Date = DateTime.Now
+            };
+            
+            leaderboard.Add(entry);
+            leaderboard = leaderboard
+                .OrderByDescending(e => e.HealthRemaining)
+                .ThenBy(e => e.Duration)
+                .Take(10)
+                .ToList();
+            
+            await SaveLeaderboard();
+        }
+
+        // Force a UI refresh
+        StateHasChanged();
+    }
+
+    private class Bullet
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Rotation { get; set; }
+        public int PlayerNumber { get; set; }
+    }
+
+    private class Tank
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Rotation { get; set; }
+        public DateTime LastShot { get; set; } = DateTime.Now;
+    }
+
+}
